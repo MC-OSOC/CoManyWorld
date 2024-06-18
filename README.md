@@ -36,11 +36,11 @@ co-many-world เป็นปลั๊กอินสำหรับ Minecraft 1
 ## การบันทึกโลก
 - โลกถูกสร้างโดยปลั๊กอินนี้ จะถูกบันทึก รูปแบบ `/world_many_custom_world` โฟลเดอร์ปกติ โลกเดียว ยกเว้น Wrold ของเดิมของ server
 - โลกทั้งหมดจะถูกบันทึก หากเป็นชนิต `-all` จะรวมไว้ในโฟลเดอร์เดียวกัน
-- ```text
-  custom_world/
-  ├──world_many_custom_world/
-  ├──world_many_custom_world_nether/
-  ├──world_many_custom_world_the_end/
+```text
+  world_many_custom_world/
+  ├─custom_world/
+  ├─custom_world_nether/
+  ├─custom_world_the_end/
 ## Permissions
 
 - `co.many.worlds.admin` : สิทธิ์ในการจัดการโลก (สร้าง, วาร์ป, รายชื่อโลก)
