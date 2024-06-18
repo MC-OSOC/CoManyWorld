@@ -12,7 +12,7 @@ import java.util.stream.Collectors;
 
 public class CommandCompleter implements TabCompleter {
 
-    private static final List<String> COMMANDS = Arrays.asList("create", "tp", "list", "del", "about");
+    private static final List<String> COMMANDS = Arrays.asList("create", "tp", "list", "del", "about","import");
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
@@ -31,8 +31,8 @@ public class CommandCompleter implements TabCompleter {
     }
 
     private String getWorldDisplayName(String folderName) {
-        if (folderName.startsWith("world-many-")) {
-            return folderName.substring("world-many-".length());
+        if (folderName.startsWith("world_many_")) {
+            return folderName.substring("world_many_".length());
         }
         return folderName;
     }
