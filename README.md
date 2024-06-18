@@ -35,7 +35,7 @@ co-many-world เป็นปลั๊กอินสำหรับ Minecraft 1
 
 ## การบันทึกโลก
 - โลกถูกสร้างโดยปลั๊กอินนี้ จะถูกบันทึก รูปแบบ `/world_many_custom_world` โฟลเดอร์ปกติ โลกเดียว ยกเว้น Wrold ของเดิมของ server
-- โลกทั้งหมดจะถูกบันทึก หากเป็นชนิต `-all` จะปันทึกในรูปแบบ
+- โลกทั้งหมดจะถูกบันทึก หากเป็นชนิต `-all` จะรวมไว้ในโฟลเดอร์เดียวกัน
 - ```text
   custom_world/
   ├──world_many_custom_world/
@@ -46,10 +46,10 @@ co-many-world เป็นปลั๊กอินสำหรับ Minecraft 1
 - `co.many.worlds.admin` : สิทธิ์ในการจัดการโลก (สร้าง, วาร์ป, รายชื่อโลก)
 - `co.many.worlds.admindel` : สิทธิ์ในการลบโลก
 
-  | Permissions             | Command                                                                                         | Properties                                                 |
-  |-------------------------|-------------------------------------------------------------------------------------------------|----------------------------------------------|
-  | co.many.worlds.admin    | /co-many create <br/>/co-many tp <br/> /co-many list <br/> /co-many import <br/> /co-many about | สิทธิ์ในการจัดการโลก (สร้าง, วาร์ป, รายชื่อโลก,นำเข้าโลก) |
-  | co.many.worlds.admindel | /co-many del <worldName>                                                                        | สิทธิ์ในการลบโลก      |                                      |
+| Permissions             | Command                                                                                         | Properties                                                |
+|-------------------------|-------------------------------------------------------------------------------------------------|-----------------------------------------------------------|
+| co.many.worlds.admin    | /co-many create <br/>/co-many tp <br/> /co-many list <br/> /co-many import <br/> /co-many about | สิทธิ์ในการจัดการโลก (สร้าง, วาร์ป, รายชื่อโลก,นำเข้าโลก) |
+| co.many.worlds.admindel | /co-many del <worldName>                                                                        | สิทธิ์ในการลบโลก                                          |                                      |
 
 
 ## การตั้งค่า
