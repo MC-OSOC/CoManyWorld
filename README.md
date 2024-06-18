@@ -48,7 +48,7 @@ co-many-world เป็นปลั๊กอินสำหรับ Minecraft 1
 
   | Permissions             | Command                                                                                         | Properties                                                 |
   |-------------------------|-------------------------------------------------------------------------------------------------|----------------------------------------------|
-  | co.many.worlds.admin    | /co-many create <br/>/co-many tp <br/> /co-many list <br/> /co-many import <br/> /co-many about | สิทธิ์ในการจัดการโลก (สร้าง, วาร์ป, รายชื่อโลก,นำเข้าโลก,ลบ) |
+  | co.many.worlds.admin    | /co-many create <br/>/co-many tp <br/> /co-many list <br/> /co-many import <br/> /co-many about | สิทธิ์ในการจัดการโลก (สร้าง, วาร์ป, รายชื่อโลก,นำเข้าโลก) |
   | co.many.worlds.admindel | /co-many del <worldName>                                                                        | สิทธิ์ในการลบโลก      |                                      |
 
 
