@@ -16,19 +16,30 @@ co-many-world เป็นปลั๊กอินสำหรับ Minecraft 1
 
 ## คำสั่ง
 
-### สร้างโลกใหม่
+#### สร้างโลกใหม่
 `/co-many create <worldName> [-11|-12|-13]`
 - `-11` : โลกปกติ (ค่าเริ่มต้น)
 - `-12` : โลกนรก (Nether)
 - `-13` : โลก The End
+- `-all`: สร้างโลกทั่งหมด
 
-### วาร์ปไปยังโลก
+#### วาร์ปไปยังโลก
 `/co-many tp <worldName>`
-### รายชื่อโลก
+#### รายชื่อโลก
 `/co-many list`
-### ลบโลก
+#### ลบโลก (ปิดใช้งานโลก)
 `/co-many del <worldName>`
-### ข้อมูลเกี่ยวกับปลั๊กอิน
+#### นำเข้าโลก
+`/co-many import [worldName]`
+
+## การบันทึกโลก
+- โลกถูกสร้างโดยปลั๊กอินนี้ จะถูกบันทึก รูปแบบ `/world_many_custom_world` โฟลเดอร์ปกติ โลกเดียว ยกเว้น Wrold ของเดิมของ server
+- โลกทั้งหมดจะถูกบันทึก หากเป็นชนิต `-all` จะปันทึกในรูปแบบ
+- ```text
+  custom_world/
+  ├──world_many_custom_world/
+  ├──world_many_custom_world_nether/
+  ├──world_many_custom_world_the_end/
 ## Permissions
 
 - `co.many.worlds.admin` : สิทธิ์ในการจัดการโลก (สร้าง, วาร์ป, รายชื่อโลก)
