@@ -1,3 +1,4 @@
 # Configuration file for CoManyWorld
 default-world-type: -11  # Default to normal world
-worlds: []  # List of worlds to be loaded on startup
+default-world: 'World'
+worlds: []   # List of worlds to be loaded on startup
