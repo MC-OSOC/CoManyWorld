@@ -1,4 +1,6 @@
 # Configuration file for CoManyWorld
 default-world-type: -11  # Default to normal world
 default-world: 'World'
+main-nether-world: 'world_nether'
+main-end-world: 'world_the_end'
 worlds: []   # List of worlds to be loaded on startup

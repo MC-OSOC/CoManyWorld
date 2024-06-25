@@ -15,10 +15,14 @@ public class WorldManager implements Listener {
 
     private final JavaPlugin plugin;
     private final String defaultWorldName;
+    private final String mainNetherWorld;
+    private final String mainEndWorld;
 
     public WorldManager(JavaPlugin plugin) {
         this.plugin = plugin;
         this.defaultWorldName = plugin.getConfig().getString("default-world", "world");
+        this.mainNetherWorld = plugin.getConfig().getString("main-nether-world", "world_nether");
+        this.mainEndWorld = plugin.getConfig().getString("main-end-world", "world_the_end");
         Bukkit.getServer().getPluginManager().registerEvents(this, plugin);
     }
 
@@ -47,16 +51,15 @@ public class WorldManager implements Listener {
             event.setRespawnLocation(getDefaultWorld().getSpawnLocation());
         }
     }
-    
+
     @EventHandler
     public void onPlayerPortal(PlayerPortalEvent event) {
         World fromWorld = event.getFrom().getWorld();
         String fromWorldName = fromWorld.getName();
 
-        // Extract base world path
-        String baseWorldPath = fromWorldName.substring(0, fromWorldName.lastIndexOf('/') + 1);
-        // Extract base world name
-        String baseWorldName = fromWorldName.substring(fromWorldName.lastIndexOf('/') + 1);
+        // Extract base world path and name
+        String baseWorldPath = fromWorldName.contains("/") ? fromWorldName.substring(0, fromWorldName.lastIndexOf('/') + 1) : "";
+        String baseWorldName = fromWorldName.contains("/") ? fromWorldName.substring(fromWorldName.lastIndexOf('/') + 1) : fromWorldName;
 
         World toWorld = null;
 
@@ -64,10 +67,14 @@ public class WorldManager implements Listener {
             if (event.getCause() == PlayerPortalEvent.TeleportCause.END_PORTAL) {
                 // If traveling through an end portal
                 toWorld = Bukkit.getWorld(baseWorldPath + "world_the_end");
+                if (toWorld == null) {
+                    // If custom End world doesn't exist, use main End world
+                    toWorld = Bukkit.getWorld(mainEndWorld);
+                }
                 if (toWorld != null) {
                     // Set custom spawn location in The End
-                    int highestY = toWorld.getHighestBlockYAt(100, 0); // Replace with your desired coordinates X and Z
-                    Location customEndLocation = new Location(toWorld, 100, highestY + 2, 0); // Spawn 2 blocks above the highest block
+                    int highestY = toWorld.getHighestBlockYAt(100, 0);
+                    Location customEndLocation = new Location(toWorld, 100, highestY + 2, 0);
                     event.setTo(customEndLocation);
                 } else {
                     event.setTo(getDefaultWorld().getSpawnLocation());
@@ -75,6 +82,10 @@ public class WorldManager implements Listener {
             } else {
                 // If traveling through a nether portal
                 toWorld = Bukkit.getWorld(baseWorldPath + "world_nether");
+                if (toWorld == null) {
+                    // If custom Nether world doesn't exist, use main Nether world
+                    toWorld = Bukkit.getWorld(mainNetherWorld);
+                }
                 if (toWorld != null) {
                     Location toLocation = calculateNetherLocation(event.getFrom(), toWorld);
                     event.setTo(toLocation);
@@ -83,7 +94,12 @@ public class WorldManager implements Listener {
                 }
             }
         } else if (fromWorld.getEnvironment() == World.Environment.NETHER) {
+            // When returning from Nether, try to find the corresponding overworld
             toWorld = Bukkit.getWorld(baseWorldPath + "world");
+            if (toWorld == null) {
+                // If corresponding overworld doesn't exist, use default world
+                toWorld = getDefaultWorld();
+            }
             if (toWorld != null) {
                 Location toLocation = calculateOverworldLocation(event.getFrom(), toWorld);
                 event.setTo(toLocation);
@@ -91,7 +107,12 @@ public class WorldManager implements Listener {
                 event.setTo(getDefaultWorld().getSpawnLocation());
             }
         } else if (fromWorld.getEnvironment() == World.Environment.THE_END) {
+            // When returning from The End, try to find the corresponding overworld
             toWorld = Bukkit.getWorld(baseWorldPath + "world");
+            if (toWorld == null) {
+                // If corresponding overworld doesn't exist, use default world
+                toWorld = getDefaultWorld();
+            }
             if (toWorld != null) {
                 event.setTo(toWorld.getSpawnLocation());
             } else {
