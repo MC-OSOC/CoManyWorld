@@ -34,7 +34,7 @@ co-many-world เป็นปลั๊กอินสำหรับ Minecraft 1
 `/co-many import <worldName>`
 
 ## การบันทึกโลก
-- โลกถูกสร้างโดยปลั๊กอินนี้ จะถูกบันทึก รูปแบบ `/world_many_custom_world` โฟลเดอร์ปกติ โลกเดียว ยกเว้น Wrold ของเดิมของ server
+- โลกถูกสร้างโดยปลั๊กอินนี้ จะถูกบันทึก รูปแบบ `many_world/custom_world` โฟลเดอร์ปกติ โลกเดียว ยกเว้น Wrold ของเดิมของ server
 -   ```text
     many_world/
     ├─custom_world/
