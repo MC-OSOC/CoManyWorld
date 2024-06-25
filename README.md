@@ -28,19 +28,23 @@ co-many-world เป็นปลั๊กอินสำหรับ Minecraft 1
 `/co-many tp <worldName>`
 #### รายชื่อโลก
 `/co-many list`
-#### ลบโลก (ปิดใช้งานโลก)
-`/co-many del <worldName>`
+#### ลบโลก (ลบโลกออกจาก config.yml เท่านั้น)
+`/co-many delete <worldName>`
 #### นำเข้าโลก
 `/co-many import <worldName>`
 
 ## การบันทึกโลก
 - โลกถูกสร้างโดยปลั๊กอินนี้ จะถูกบันทึก รูปแบบ `/world_many_custom_world` โฟลเดอร์ปกติ โลกเดียว ยกเว้น Wrold ของเดิมของ server
+-   ```text
+    many_world/
+    ├─custom_world/
 - โลกทั้งหมดจะถูกบันทึก หากเป็นชนิต `-all` จะรวมไว้ในโฟลเดอร์เดียวกัน
   ```text
-  world_many_custom_world/
+  many_world/
   ├─custom_world/
-  ├─custom_world_nether/
-  ├─custom_world_the_end/
+     ├─world/
+     ├─world_nether/
+     ├─world_the_end/
 ## Permissions
 
 - `co.many.worlds.admin` : สิทธิ์ในการจัดการโลก (สร้าง, วาร์ป, รายชื่อโลก)
@@ -49,7 +53,7 @@ co-many-world เป็นปลั๊กอินสำหรับ Minecraft 1
 | Permissions             | Command                                                                                         | Properties                                                |
 |-------------------------|-------------------------------------------------------------------------------------------------|-----------------------------------------------------------|
 | co.many.worlds.admin    | /co-many create <br/>/co-many tp <br/> /co-many list <br/> /co-many import <br/> /co-many about | สิทธิ์ในการจัดการโลก (สร้าง, วาร์ป, รายชื่อโลก,นำเข้าโลก) |
-| co.many.worlds.admindel | /co-many del <worldName>                                                                        | สิทธิ์ในการลบโลก                                          |                                      |
+| co.many.worlds.admindel | /co-many delete <worldName>                                                                     | สิทธิ์ในการลบโลก                                          |                                      |
 
 
 ## การตั้งค่า
@@ -59,4 +63,12 @@ co-many-world เป็นปลั๊กอินสำหรับ Minecraft 1
 ```yaml
 # Configuration file for CoManyWorld
 default-world-type: -11  # Default to normal world
-worlds: []  # List of worlds to be loaded on startup
+default-world: 'World'
+main-nether-world: 'world_nether'
+main-end-world: 'world_the_end'
+worlds: []   # List of worlds to be loaded on startup
+```
+ไฟล์ `delete_worlds.yml` มีไว้เก็บโลกที่ถูกนำออกจาก `config.yml`
+```yaml
+delete_worlds: []
+```
