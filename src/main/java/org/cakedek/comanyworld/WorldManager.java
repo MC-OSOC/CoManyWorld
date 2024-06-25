@@ -6,6 +6,7 @@ import org.bukkit.World;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerPortalEvent;
+import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.event.world.WorldLoadEvent;
 import org.bukkit.event.world.WorldUnloadEvent;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -17,9 +18,7 @@ public class WorldManager implements Listener {
 
     public WorldManager(JavaPlugin plugin) {
         this.plugin = plugin;
-        // Load the default world name from the config
         this.defaultWorldName = plugin.getConfig().getString("default-world", "world");
-        // Register this class as an event listener
         Bukkit.getServer().getPluginManager().registerEvents(this, plugin);
     }
 
@@ -35,6 +34,20 @@ public class WorldManager implements Listener {
         Bukkit.getLogger().info("World unloaded: " + world.getName());
     }
 
+
+    @EventHandler
+    public void onPlayerRespawn(PlayerRespawnEvent event) {
+        if (event.isBedSpawn() || event.isAnchorSpawn()) {
+            return;
+        }
+        World playerWorld = event.getPlayer().getWorld();
+        if (playerWorld.getName().startsWith("many_world/")) {
+            event.setRespawnLocation(playerWorld.getSpawnLocation());
+        } else {
+            event.setRespawnLocation(getDefaultWorld().getSpawnLocation());
+        }
+    }
+    
     @EventHandler
     public void onPlayerPortal(PlayerPortalEvent event) {
         World fromWorld = event.getFrom().getWorld();
