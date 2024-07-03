@@ -1,17 +1,24 @@
 name: co-many-world
-version: 1.0.2 Preview
+version: 1.0.3 Preview
 main: org.cakedek.comanyworld.CoManyWorld
 description: A multi-world plugin for Minecraft 1.21.x
 author: CakeDek [MC-OSOC]
 commands:
   co-many:
     description: Commands for managing multiple worlds
-    usage: /co-many <create|tp|list|delete|import> [worldName] [worldType]
+    usage: /co-many <create|tp|list|delete|import|backup> [worldName] [worldType]
     permission: co.many.worlds.admin
+  co-many-clear:
+    description: Clear deleted worlds from delete_worlds.yml and delete their folders
+    usage: /co-many-clear
+    permission: co.many.worlds.adminclear
 permissions:
   co.many.worlds.admin:
     description: Allows admin to manage worlds
     default: op
   co.many.worlds.admindel:
     description: Allows admin to delete worlds
+    default: op
+  co.many.worlds.adminclear:
+    description: Allows admin to clear deleted worlds
     default: op

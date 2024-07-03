@@ -6,13 +6,12 @@ import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
 
-import java.util.Arrays;
-import java.util.List;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public class CommandCompleter implements TabCompleter {
 
-    private static final List<String> COMMANDS = Arrays.asList("create", "tp", "list", "delete", "about","import");
+    private static final List<String> COMMANDS = Arrays.asList("create", "tp", "list", "delete", "about", "import", "backup");
 
     private static final List<String> DEFAULT_WORLDS = Arrays.asList("world", "world_nether", "world_the_end");
 
@@ -27,12 +26,46 @@ public class CommandCompleter implements TabCompleter {
                     .map(World::getName)
                     .filter(name -> name.startsWith(args[1].toLowerCase()))
                     .collect(Collectors.toList());
+        } else if (args.length == 2 && (args[0].equalsIgnoreCase("backup"))) {
+            return Bukkit.getWorlds().stream()
+                    .map(World::getName)
+                    .filter(name -> name.startsWith(args[1].toLowerCase()))
+                    .map(this::getMainWorldFolder)
+                    .distinct()
+                    .collect(Collectors.toList());
         } else if (args.length == 2 && args[0].equalsIgnoreCase("delete")) {
-            return getCustomWorlds().stream()
+            return getCustomWorldsForDeletion().stream()
                     .filter(name -> name.startsWith(args[1].toLowerCase()))
                     .collect(Collectors.toList());
         }
         return null;
+    }
+
+    private List<String> getCustomWorldsForDeletion() {
+        Map<String, List<String>> worldGroups = new HashMap<>();
+
+        for (String worldName : getCustomWorlds()) {
+            String[] parts = worldName.split("/");
+            if (parts.length > 2) {
+                String parentWorld = parts[0] + "/" + parts[1] + "/";
+                worldGroups.computeIfAbsent(parentWorld, k -> new ArrayList<>()).add(worldName);
+            } else {
+                worldGroups.put(worldName, Collections.singletonList(worldName));
+            }
+        }
+
+        List<String> result = new ArrayList<>();
+        for (Map.Entry<String, List<String>> entry : worldGroups.entrySet()) {
+            if (entry.getValue().size() > 1) {
+                // If there are multiple worlds in this group, add the parent world with a trailing slash
+                result.add(entry.getKey());
+            } else {
+                // If there's only one world in this group, add it without a trailing slash
+                result.add(entry.getValue().get(0));
+            }
+        }
+        
+        return result;
     }
 
 
@@ -51,5 +84,14 @@ public class CommandCompleter implements TabCompleter {
                 worldName.equalsIgnoreCase("many_world/world")||
                 worldName.equalsIgnoreCase("many_world/world_nether")||
                 worldName.equalsIgnoreCase("many_world/world_the_end");
+    }
+    private String getMainWorldFolder(String worldName) {
+        if (worldName.startsWith("many_world/")) {
+            String[] parts = worldName.split("/");
+            if (parts.length > 2) {
+                return "many_world/" + parts[1];
+            }
+        }
+        return worldName;
     }
 }

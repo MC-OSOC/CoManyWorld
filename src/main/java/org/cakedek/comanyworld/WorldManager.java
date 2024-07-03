@@ -21,8 +21,8 @@ public class WorldManager implements Listener {
     public WorldManager(JavaPlugin plugin) {
         this.plugin = plugin;
         this.defaultWorldName = plugin.getConfig().getString("default-world", "world");
-        this.mainNetherWorld = plugin.getConfig().getString("main-nether-world", "world_nether");
-        this.mainEndWorld = plugin.getConfig().getString("main-end-world", "world_the_end");
+        this.mainNetherWorld = plugin.getConfig().getString("default-nether-world", "world_nether");
+        this.mainEndWorld = plugin.getConfig().getString("default-end-world", "world_the_end");
         Bukkit.getServer().getPluginManager().registerEvents(this, plugin);
     }
 
@@ -72,9 +72,8 @@ public class WorldManager implements Listener {
                     toWorld = Bukkit.getWorld(mainEndWorld);
                 }
                 if (toWorld != null) {
-                    // Set custom spawn location in The End
                     int highestY = toWorld.getHighestBlockYAt(100, 0);
-                    Location customEndLocation = new Location(toWorld, 100, highestY + 2, 0);
+                    Location customEndLocation = new Location(toWorld, 200, highestY + 2, 0);
                     event.setTo(customEndLocation);
                 } else {
                     event.setTo(getDefaultWorld().getSpawnLocation());

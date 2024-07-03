@@ -2,9 +2,14 @@ package org.cakedek.comanyworld;
 
 import org.bukkit.World;
 import org.bukkit.WorldCreator;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.world.WorldLoadEvent;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.cakedek.comanyworld.cm.WorldCleanup;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.util.List;
 import java.util.logging.Level;
 
@@ -36,7 +41,7 @@ public class CoManyWorld extends JavaPlugin {
 
     @Override
     public void onDisable() {
-
+        WorldCleanup.cleanupWorlds();
     }
 
     public static CoManyWorld getInstance() {
@@ -60,6 +65,24 @@ public class CoManyWorld extends JavaPlugin {
 
             getLogger().info(">co_many Loading world: " + fullWorldPath + " with environment: " + environment);
             new WorldCreator(fullWorldPath).environment(environment).createWorld();
+        }
+    }
+
+    @EventHandler
+    public void onWorldLoad(WorldLoadEvent event) {
+        World world = event.getWorld();
+        String worldName = world.getName();
+        if (worldName.startsWith("many_world/")) {
+            File worldFolder = world.getWorldFolder();
+            File sessionLock = new File(worldFolder, "session.lock");
+            if (sessionLock.exists()) {
+                try {
+                    Files.delete(sessionLock.toPath());
+                    CoManyWorld.getInstance().getLogger().info("Deleted existing session.lock for world: " + worldName);
+                } catch (IOException e) {
+                    CoManyWorld.getInstance().getLogger().log(Level.WARNING, "Failed to delete existing session.lock for world: " + worldName, e);
+                }
+            }
         }
     }
 }
