@@ -73,7 +73,7 @@ public class WorldManager implements Listener {
                 }
                 if (toWorld != null) {
                     int highestY = toWorld.getHighestBlockYAt(100, 0);
-                    Location customEndLocation = new Location(toWorld, 200, highestY + 2, 0);
+                    Location customEndLocation = new Location(toWorld, 100, highestY + 2, 0);
                     event.setTo(customEndLocation);
                 } else {
                     event.setTo(getDefaultWorld().getSpawnLocation());
