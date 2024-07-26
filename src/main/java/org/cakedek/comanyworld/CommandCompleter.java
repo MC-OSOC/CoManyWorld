@@ -89,7 +89,13 @@ public class CommandCompleter implements TabCompleter {
         if (worldName.startsWith("many_world/")) {
             String[] parts = worldName.split("/");
             if (parts.length > 2) {
-                return "many_world/" + parts[1];
+                String baseName = "many_world/" + parts[1];
+                if (parts[2].equals("world") || parts[2].equals("world_nether") || parts[2].equals("world_the_end")) {
+                    return baseName;
+                } else {
+                    // ในกรณีที่เป็นโครงสร้างเก่า หรือ โครงสร้างที่ไม่ทราบ
+                    return worldName;
+                }
             }
         }
         return worldName;

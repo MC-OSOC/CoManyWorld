@@ -5,11 +5,11 @@
   <modelVersion>4.0.0</modelVersion>
 
   <groupId>org.cakedek</groupId>
-  <artifactId>co-many-world</artifactId>
-  <version>1.0-reb</version>
+  <artifactId>CoManyWorld</artifactId>
+  <version>1.0.4-Preview</version>
   <packaging>jar</packaging>
 
-  <name>co-many-world</name>
+  <name>CoManyWorld</name>
 
   <properties>
     <java.version>1.8</java.version>

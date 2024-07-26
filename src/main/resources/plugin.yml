@@ -1,5 +1,5 @@
-name: co-many-world
-version: 1.0.3 Preview
+name: CoManyWorld
+version: 1.0.4-Preview
 main: org.cakedek.comanyworld.CoManyWorld
 description: A multi-world plugin for Minecraft 1.21.x
 author: CakeDek [MC-OSOC]

@@ -3,6 +3,7 @@ package org.cakedek.comanyworld;
 import org.bukkit.World;
 import org.bukkit.WorldCreator;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
 import org.bukkit.event.world.WorldLoadEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.cakedek.comanyworld.cm.WorldCleanup;
@@ -13,10 +14,9 @@ import java.nio.file.Files;
 import java.util.List;
 import java.util.logging.Level;
 
-public class CoManyWorld extends JavaPlugin {
+public class CoManyWorld extends JavaPlugin implements Listener {
 
     private static CoManyWorld instance;
-    private WorldManager worldManager;
 
     @Override
     public void onEnable() {
@@ -26,7 +26,14 @@ public class CoManyWorld extends JavaPlugin {
         instance = this;
 
         // Initialize WorldManager
-        worldManager = new WorldManager(this);
+        WorldManager worldManager = new WorldManager(this);
+
+        // Create Import Folder
+        File importFolder = new File(getDataFolder(), "import");
+        if (!importFolder.exists()) {
+            importFolder.mkdirs();
+            getLogger().info("Created import folder: " + importFolder.getAbsolutePath());
+        }
 
         // Register commands and tab completer
         getCommand("co-many").setExecutor(new CommandHandler());

@@ -46,19 +46,19 @@ public class CreateWorld {
 
                     if (createAll) {
                         createWorldWithEnvironment(folderName + "/world", World.Environment.NORMAL);
-                        createWorldWithEnvironment(folderName + "/world_nether", World.Environment.NETHER);
-                        createWorldWithEnvironment(folderName + "/world_the_end", World.Environment.THE_END);
+                        createWorldWithEnvironment(folderName + "/nether", World.Environment.NETHER);
+                        createWorldWithEnvironment(folderName + "/the_end", World.Environment.THE_END);
                     } else {
                         switch (worldType) {
                             case -12: // NETHER
-                                createWorldWithEnvironment(folderName + "_nether", World.Environment.NETHER);
+                                createWorldWithEnvironment(folderName + "/nether", World.Environment.NETHER);
                                 break;
                             case -13: // THE_END
-                                createWorldWithEnvironment(folderName + "_the_end", World.Environment.THE_END);
+                                createWorldWithEnvironment(folderName + "/the_end", World.Environment.THE_END);
                                 break;
                             case -11:
                             default: // NORMAL
-                                createWorldWithEnvironment(folderName, World.Environment.NORMAL);
+                                createWorldWithEnvironment(folderName + "/world", World.Environment.NORMAL);
                                 break;
                         }
                     }
@@ -80,19 +80,19 @@ public class CreateWorld {
                     } else {
                         switch (worldType) {
                             case -12: // NETHER
-                                if (!worlds.contains(folderName + "_nether")) {
-                                    worlds.add(folderName + "_nether");
+                                if (!worlds.contains(folderName + "/nether")) {
+                                    worlds.add(folderName + "/nether");
                                 }
                                 break;
                             case -13: // THE_END
-                                if (!worlds.contains(folderName + "_the_end")) {
-                                    worlds.add(folderName + "_the_end");
+                                if (!worlds.contains(folderName + "/the_end")) {
+                                    worlds.add(folderName + "/the_end");
                                 }
                                 break;
                             case -11:
                             default: // NORMAL
-                                if (!worlds.contains(folderName)) {
-                                    worlds.add(folderName);
+                                if (!worlds.contains(folderName + "/world")) {
+                                    worlds.add(folderName + "/world");
                                 }
                                 break;
                         }

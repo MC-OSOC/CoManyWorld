@@ -4,3 +4,4 @@ default-world: 'World'
 default-nether-world: 'world_nether'
 default-end-world: 'world_the_end'
 worlds: []   # List of worlds to be loaded on startup
+prevent-single-world-portals: true  # Prevent portal usage in single worlds

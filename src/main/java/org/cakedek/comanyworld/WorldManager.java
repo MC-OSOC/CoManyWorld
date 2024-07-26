@@ -55,13 +55,28 @@ public class WorldManager implements Listener {
     @EventHandler
     public void onPlayerPortal(PlayerPortalEvent event) {
         World fromWorld = event.getFrom().getWorld();
+        assert fromWorld != null;
         String fromWorldName = fromWorld.getName();
+
+        if (plugin.getConfig().getBoolean("prevent-single-world-portals", true)) {
+            if (fromWorldName.startsWith("many_world/")) {
+                String baseWorldPath = fromWorldName.substring(0, fromWorldName.lastIndexOf('/') + 1);
+                boolean hasNormalWorld = Bukkit.getWorld(baseWorldPath + "world") != null;
+                boolean hasNetherWorld = Bukkit.getWorld(baseWorldPath + "world_nether") != null;
+                boolean hasEndWorld = Bukkit.getWorld(baseWorldPath + "world_the_end") != null;
+
+                if (!(hasNormalWorld && hasNetherWorld && hasEndWorld)) {
+                    event.setCancelled(true);
+                    event.getPlayer().sendMessage("Portal travel is disabled in single worlds.");
+                    return;
+                }
+            }
+        }
 
         // Extract base world path and name
         String baseWorldPath = fromWorldName.contains("/") ? fromWorldName.substring(0, fromWorldName.lastIndexOf('/') + 1) : "";
-        String baseWorldName = fromWorldName.contains("/") ? fromWorldName.substring(fromWorldName.lastIndexOf('/') + 1) : fromWorldName;
 
-        World toWorld = null;
+        World toWorld;
 
         if (fromWorld.getEnvironment() == World.Environment.NORMAL) {
             if (event.getCause() == PlayerPortalEvent.TeleportCause.END_PORTAL) {
