@@ -9,10 +9,11 @@ import org.bukkit.command.TabCompleter;
 import java.util.*;
 import java.util.stream.Collectors;
 
+@SuppressWarnings("NullableProblems")
 public class CommandCompleter implements TabCompleter {
 
     private static final List<String> COMMANDS = Arrays.asList("create", "tp", "list", "delete", "about", "import", "backup");
-
+    private static final List<String> WORLD_TYPES = Arrays.asList("-11", "-12", "-13", "-all");
     private static final List<String> DEFAULT_WORLDS = Arrays.asList("world", "world_nether", "world_the_end");
 
     @Override
@@ -21,21 +22,20 @@ public class CommandCompleter implements TabCompleter {
             return COMMANDS.stream()
                     .filter(cmd -> cmd.startsWith(args[0].toLowerCase()))
                     .collect(Collectors.toList());
-        } else if (args.length == 2 && (args[0].equalsIgnoreCase("tp"))) {
+        } else if (args.length == 2 && (args[0].equalsIgnoreCase("tp") || args[0].equalsIgnoreCase("backup"))) {
             return Bukkit.getWorlds().stream()
                     .map(World::getName)
                     .filter(name -> name.startsWith(args[1].toLowerCase()))
-                    .collect(Collectors.toList());
-        } else if (args.length == 2 && (args[0].equalsIgnoreCase("backup"))) {
-            return Bukkit.getWorlds().stream()
-                    .map(World::getName)
-                    .filter(name -> name.startsWith(args[1].toLowerCase()))
-                    .map(this::getMainWorldFolder)
-                    .distinct()
                     .collect(Collectors.toList());
         } else if (args.length == 2 && args[0].equalsIgnoreCase("delete")) {
             return getCustomWorldsForDeletion().stream()
                     .filter(name -> name.startsWith(args[1].toLowerCase()))
+                    .collect(Collectors.toList());
+        } else if (args.length >= 3 && args[0].equalsIgnoreCase("create")) {
+            List<String> suggestions = new ArrayList<>(WORLD_TYPES);
+            suggestions.add("-s");
+            return suggestions.stream()
+                    .filter(type -> type.startsWith(args[args.length - 1].toLowerCase()))
                     .collect(Collectors.toList());
         }
         return null;

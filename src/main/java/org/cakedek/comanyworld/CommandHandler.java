@@ -22,34 +22,58 @@ public class CommandHandler implements CommandExecutor {
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         String se =     ChatColor.GOLD + "=== Many World \n" + ChatColor.RESET +
-                        ChatColor.YELLOW + "/co-many create [worldName] [World] " + ChatColor.RESET + ">> Create a new world\n" +
-                        ChatColor.YELLOW + "/co-many list " + ChatColor.RESET + ">> world list \n" +
-                        ChatColor.YELLOW + "/co-many tp [worldName] " + ChatColor.RESET + ">> tp to world\n" +
-                        ChatColor.YELLOW + "/co-many import [worldName] " + ChatColor.RESET + ">> Import World \n" +
-                        ChatColor.YELLOW + "/co-many delete [worldName] " + ChatColor.RESET + ">> Delete world\n" +
-                        ChatColor.YELLOW + "/co-many clear " + ChatColor.RESET + ">> Clear the permanent trash world\n" +
-                        ChatColor.YELLOW + "/co-many backup [worldName] " + ChatColor.RESET + ">> Backup world\n" +
-                        ChatColor.YELLOW + "/co-many about " + ChatColor.RESET + ">> About \n";
+                ChatColor.YELLOW + "/co-many create [worldName] [-11|-12|-13|-all] [-s<seed>] " + ChatColor.RESET + ">> Create a new world\n" +
+                ChatColor.YELLOW + "/co-many list " + ChatColor.RESET + ">> world list \n" +
+                ChatColor.YELLOW + "/co-many tp [worldName] " + ChatColor.RESET + ">> tp to world\n" +
+                ChatColor.YELLOW + "/co-many import [worldName] " + ChatColor.RESET + ">> Import World \n" +
+                ChatColor.YELLOW + "/co-many delete [worldName] " + ChatColor.RESET + ">> Delete world\n" +
+                ChatColor.YELLOW + "/co-many clear " + ChatColor.RESET + ">> Clear the permanent trash world\n" +
+                ChatColor.YELLOW + "/co-many backup [worldName] " + ChatColor.RESET + ">> Backup world\n" +
+                ChatColor.YELLOW + "/co-many about " + ChatColor.RESET + ">> About \n";
         if (args.length == 0) {
             sender.sendMessage(se);
             return true;
         }
         //////  CREATE
         if (args[0].equalsIgnoreCase("create")) {
-            if (args.length >= 3 && args[2].equalsIgnoreCase("-all")) {
-                CreateWorld.createWorld(sender, args[1], true, -1);
-            } else if (args.length == 3) {
-                int worldType = Integer.parseInt(args[2]);
-                CreateWorld.createWorld(sender, args[1], false, worldType);
-            } else {
-                ///////////////////////////////////////////////////////////////////////////////////////////////
+            if (args.length < 3) {
                 sender.sendMessage(ChatColor.GOLD+"=== Many World > Create "+ ChatColor.RESET +
-                                                    "\n-11 [WORLD] " +
-                                                    "\n-12 [NETHER] " +
-                                                    "\n-13 [THE_END] " +
-                                                    "\n-all [ALL_WORLD]" +
-                                                    "\nCommand: /co-many create <worldName> [-11|-12|-13]");
+                        "\n-11 [WORLD] " +
+                        "\n-12 [NETHER] " +
+                        "\n-13 [THE_END] " +
+                        "\n-all [ALL_WORLD]" +
+                        "\n-s<seed> [SEED]" +
+                        "\nCommand: /co-many create <worldName> [-11|-12|-13|-all] [-s<seed>]");
+                return true;
             }
+
+            String worldName = args[1];
+            boolean createAll = false;
+            int worldType = -11;
+            Long seed = null;
+
+            for (int i = 2; i < args.length; i++) {
+                String arg = args[i];
+                if (arg.equalsIgnoreCase("-all")) {
+                    createAll = true;
+                } else if (arg.startsWith("-s")) {
+                    try {
+                        seed = Long.parseLong(arg.substring(2));
+                    } catch (NumberFormatException e) {
+                        sender.sendMessage(ChatColor.RED + "Invalid seed format. Please use a number.");
+                        return true;
+                    }
+                } else {
+                    try {
+                        worldType = Integer.parseInt(arg);
+                    } catch (NumberFormatException e) {
+                        sender.sendMessage(ChatColor.RED + "Invalid world type. Use -11, -12, -13, or -all.");
+                        return true;
+                    }
+                }
+            }
+
+            CreateWorld.createWorld(sender, worldName, createAll, worldType, seed);
             return true;
         }
         //////  TP

@@ -20,7 +20,7 @@ public class CreateWorld {
     private static final List<String> RESERVED_WORLD_NAMES = Arrays.asList("world", "world_nether", "world_the_end");
 
     ////// CREATE WORLD
-    public static void createWorld(CommandSender sender, String worldName, boolean createAll, int worldType) {
+    public static void createWorld(CommandSender sender, String worldName, boolean createAll, int worldType, Long seed) {
         String folderName = "many_world/" + worldName;
 
         // Check if the world already exists
@@ -45,25 +45,25 @@ public class CreateWorld {
                     progressBar.removeAll();
 
                     if (createAll) {
-                        createWorldWithEnvironment(folderName + "/world", World.Environment.NORMAL);
-                        createWorldWithEnvironment(folderName + "/nether", World.Environment.NETHER);
-                        createWorldWithEnvironment(folderName + "/the_end", World.Environment.THE_END);
+                        createWorldWithEnvironment(folderName + "/world", World.Environment.NORMAL, seed);
+                        createWorldWithEnvironment(folderName + "/nether", World.Environment.NETHER, seed);
+                        createWorldWithEnvironment(folderName + "/the_end", World.Environment.THE_END, seed);
                     } else {
                         switch (worldType) {
                             case -12: // NETHER
-                                createWorldWithEnvironment(folderName + "/nether", World.Environment.NETHER);
+                                createWorldWithEnvironment(folderName + "/nether", World.Environment.NETHER, seed);
                                 break;
                             case -13: // THE_END
-                                createWorldWithEnvironment(folderName + "/the_end", World.Environment.THE_END);
+                                createWorldWithEnvironment(folderName + "/the_end", World.Environment.THE_END, seed);
                                 break;
                             case -11:
                             default: // NORMAL
-                                createWorldWithEnvironment(folderName + "/world", World.Environment.NORMAL);
+                                createWorldWithEnvironment(folderName + "/world", World.Environment.NORMAL, seed);
                                 break;
                         }
                     }
 
-                    sender.sendMessage(ChatColor.GREEN + "World " + worldName + " created.");
+                    sender.sendMessage(ChatColor.GREEN + "World " + worldName + " created." + (seed != null ? " Seed: " + seed : ""));
 
                     // ADD WORLD TO CONFIG.YML
                     List<String> worlds = CoManyWorld.getInstance().getConfig().getStringList("worlds");
@@ -122,9 +122,12 @@ public class CreateWorld {
         return RESERVED_WORLD_NAMES.contains(worldName.toLowerCase());
     }
 
-    private static void createWorldWithEnvironment(String worldName, World.Environment environment) {
+    private static void createWorldWithEnvironment(String worldName, World.Environment environment, Long seed) {
         WorldCreator worldCreator = new WorldCreator(worldName);
         worldCreator.environment(environment);
+        if (seed != null) {
+            worldCreator.seed(seed);
+        }
         Bukkit.createWorld(worldCreator);
     }
 }

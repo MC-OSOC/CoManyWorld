@@ -28,6 +28,7 @@ co-many-world is a plugin for Minecraft 1.21 and above that allows you to create
 - `-12` : Nether world
 - `-13` : The End world
 - `-all`: Create all world types
+- `-s` : Seed world
 
 #### Basic commands
 - **Teleport to a world**: `/co-many tp <worldName>`

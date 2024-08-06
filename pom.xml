@@ -6,7 +6,7 @@
 
   <groupId>org.cakedek</groupId>
   <artifactId>CoManyWorld</artifactId>
-  <version>1.0.4-Preview</version>
+  <version>1.0.5-Preview</version>
   <packaging>jar</packaging>
 
   <name>CoManyWorld</name>

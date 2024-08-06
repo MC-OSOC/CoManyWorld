@@ -28,6 +28,7 @@ co-many-world เป็นปลั๊กอินสำหรับ Minecraft 1
 - `-12` : โลกนรก (Nether)
 - `-13` : โลก The End
 - `-all`: สร้างโลกทั้งหมด
+- `-s` : Seed
 
 #### คำสั่งพื้นฐาน
 - **วาร์ปไปยังโลก**: `/co-many tp <worldName>`
