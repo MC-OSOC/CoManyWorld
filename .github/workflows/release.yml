@@ -1,7 +1,10 @@
-# Creates a GitHub Release when a tag is pushed, e.g.
-#   git tag 1.1.0_Preview && git push origin 1.1.0_Preview
+# Creates a GitHub Release, in one of two ways:
 #
-# The jar is built here on GitHub's runner from the tagged commit, after the tests pass,
+#   1. Push a tag:  git tag 1.1.0_Preview && git push origin 1.1.0_Preview
+#   2. Press the button: Actions -> Release -> Run workflow (branch: main, tag: 1.1.0_Preview).
+#      The tag is created on the current commit of main, but only after the tests pass.
+#
+# The jar is built here on GitHub's runner from that commit, after the tests pass,
 # and gets a signed build provenance attestation, so anyone can check where it came from:
 #   gh attestation verify CoManyWorld-1.1.0-Preview.jar -R MC-OSOC/CoManyWorld
 #
@@ -11,18 +14,48 @@ name: Release
 on:
   push:
     tags: ['*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to create on main, e.g. 1.1.0_Preview (must match the version in pom.xml, with "-" written as "_")'
+        required: true
+        type: string
 
 permissions:
   contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   release:
     runs-on: ubuntu-latest
     permissions:
-      contents: write      # create the release and upload the jar
+      contents: write      # create the tag/release and upload the jar
       id-token: write      # sign the attestation
       attestations: write  # store the attestation
+    env:
+      # The tag being released: the pushed tag, or the one typed in when pressing "Run workflow".
+      TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
     steps:
+      - name: Check where the release comes from
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Run this workflow on the main branch (selected: $GITHUB_REF)."
+            exit 1
+          fi
+          if ! [[ "$TAG" =~ ^[0-9A-Za-z._-]+$ ]]; then
+            echo "::error::'$TAG' is not a valid tag name."
+            exit 1
+          fi
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" > /dev/null 2>&1; then
+            echo "::error::Tag '$TAG' already exists."
+            exit 1
+          fi
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
@@ -34,7 +67,6 @@ jobs:
       - name: Check that the tag matches the version in pom.xml
         run: |
           VERSION=$(mvn -B -q help:evaluate -Dexpression=project.version -DforceStdout)
-          TAG="$GITHUB_REF_NAME"
           if [ "${TAG//_/-}" != "$VERSION" ]; then
             echo "::error::Tag '$TAG' does not match pom.xml version '$VERSION'. Use the tag '${VERSION//-/_}' or change the version in pom.xml."
             exit 1
@@ -57,10 +89,7 @@ jobs:
           subject-path: target/CoManyWorld-${{ env.VERSION }}.jar
 
       - name: Create GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="$GITHUB_REF_NAME"
           FILES=("target/CoManyWorld-$VERSION.jar" "target/CoManyWorld-$VERSION.jar.sha256")
 
           if gh release view "$TAG" > /dev/null 2>&1; then
@@ -69,7 +98,13 @@ jobs:
             exit 0
           fi
 
-          ARGS=(--title "${TAG//_/ }" --verify-tag)
+          ARGS=(--title "${TAG//_/ }")
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            # Creates the tag on the commit that was just tested and built.
+            ARGS+=(--target "$GITHUB_SHA")
+          else
+            ARGS+=(--verify-tag)
+          fi
           NOTES=".github/release-notes/$TAG.md"
           if [ -f "$NOTES" ]; then
             ARGS+=(--notes-file "$NOTES")
