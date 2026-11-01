@@ -5,7 +5,7 @@ repo นี้มี workflow 2 ตัวใน `.github/workflows/`
 | ไฟล์ | ทำงานเมื่อ | ทำอะไร |
 |---|---|---|
 | `ci.yml` | เปิด/อัปเดต Pull Request และ push เข้า `main` | รันเทสต์ (Paper API + MockBukkit) แล้ว build `.jar` (Spigot API) แนบไว้ในหน้า run ให้ดาวน์โหลดไปลองได้ 14 วัน |
-| `release.yml` | push tag เช่น `1.1.0_Preview` | ตรวจว่า tag ตรงกับเวอร์ชันใน `pom.xml` → รันเทสต์ → build `.jar` → สร้างไฟล์ `.sha256` → เซ็นรับรองที่มาของไฟล์ (attestation) → สร้าง Release พร้อมแนบไฟล์ |
+| `release.yml` | push tag เช่น `1.1.0_Preview` **หรือ** กดปุ่ม *Run workflow* ในแท็บ Actions | ตรวจว่า tag ตรงกับเวอร์ชันใน `pom.xml` → รันเทสต์ → build `.jar` → สร้างไฟล์ `.sha256` → เซ็นรับรองที่มาของไฟล์ (attestation) → สร้าง Release พร้อมแนบไฟล์ |
 
 ไฟล์ release ถูก build บนเครื่องของ GitHub จากโค้ดตรง tag นั้นเท่านั้น ไม่มีใครอัปโหลดไฟล์เองด้วยมือ
 
@@ -39,6 +39,9 @@ repo นี้มี workflow 2 ตัวใน `.github/workflows/`
 
 จากนี้มีแค่คนใน bypass list ที่สร้าง/ลบ tag ได้ ซึ่งก็คือคนที่ออก release ได้
 
+> ถ้าจะออก release ด้วยปุ่ม *Run workflow* ด้วย ให้เพิ่ม **GitHub Actions** (หรือ *github-actions* app) ใน Bypass list
+> เพราะตอนกดปุ่ม workflow เป็นคนสร้าง tag เอง ส่วนการกดปุ่ม Run workflow ทำได้เฉพาะคนที่มีสิทธิ์ write ใน repo
+
 ### 4. ป้องกัน branch `main` ให้ต้องผ่าน CI ก่อน merge (แนะนำ)
 **Settings → Rules → Rulesets → New ruleset → New branch ruleset**
 - **Target branches → Include default branch**
@@ -60,7 +63,11 @@ repo นี้มี workflow 2 ตัวใน `.github/workflows/`
 2. เขียน release notes ไว้ที่ `.github/release-notes/<tag>.md` เช่น `.github/release-notes/1.2.0_Preview.md`
    (ถ้าไม่มีไฟล์นี้ GitHub จะสร้าง notes ให้อัตโนมัติจากรายชื่อ PR)
 3. เปิด PR → รอ CI ผ่าน → merge เข้า `main`
-4. สร้าง tag จาก `main` แล้ว push:
+4. **วิธีที่ 1: กดปุ่ม (ง่ายที่สุด)**
+   **Actions → Release → Run workflow** → เลือก branch `main` → ใส่ tag เช่น `1.2.0_Preview` → กด **Run workflow**
+   workflow จะรันเทสต์และ build ก่อน ถ้าผ่านทั้งหมดจึงสร้าง tag บน commit นั้นแล้วออก release
+
+   **วิธีที่ 2: push tag เอง** สร้าง tag จาก `main` แล้ว push:
    ```bash
    git checkout main
    git pull
