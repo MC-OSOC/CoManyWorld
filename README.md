@@ -1,7 +1,7 @@
 # co-many-world
 ![ข้อความอธิบายภาพ](backgrounds-01.png)
 
-co-many-world เป็นปลั๊กอินสำหรับ Minecraft 1.21 ขึ้นไป ที่ช่วยให้คุณสามารถสร้างและจัดการหลายโลก
+co-many-world เป็นปลั๊กอินสำหรับเซิร์ฟเวอร์ **Spigot และ Paper** Minecraft 1.21 ขึ้นไป (รวมถึง 26.x) ที่ช่วยให้คุณสามารถสร้างและจัดการหลายโลก
 #### นี่คือปลั๊กอินตัวอย่างทดลองใช้งานและทดสอบเท่านั้น ไม่แนะนำให้ไปใช้กับ server จริง เพราะปลั๊กอินนี้อยู่ในช่วงพัฒนา และอาจจะไม่สมบูรณ์
 
 [English version](https://github.com/MC-OSOC/co-many-world/blob/main/README-EN.md)
@@ -14,11 +14,20 @@ co-many-world เป็นปลั๊กอินสำหรับ Minecraft 1
 - นำเข้าโลกจากไฟล์ ZIP หรือโฟลเดอร์
 - สำรองข้อมูลโลก
 - รองรับ EssentialsX
+- รองรับทั้ง Spigot และ Paper ด้วยไฟล์ .jar เดียวกัน (บน Paper จะใช้การวาร์ปแบบ async ไม่ทำให้เซิร์ฟเวอร์ค้าง)
 
 ## การติดตั้ง
 
 1. ดาวน์โหลดไฟล์จาก release
-2. นำไฟล์ .jar ไปไว้ในโฟลเดอร์ `plugins` ของเซิร์ฟเวอร์ Minecraft
+2. นำไฟล์ .jar ไปไว้ในโฟลเดอร์ `plugins` ของเซิร์ฟเวอร์ Minecraft (Spigot หรือ Paper, ต้องใช้ Java 21 ขึ้นไป)
+
+### Build เอง
+ต้องใช้ JDK 21 และ Maven
+```bash
+mvn package
+```
+ไฟล์จะอยู่ที่ `target/CoManyWorld-<version>.jar` ใช้ได้ทั้ง Spigot และ Paper
+ถ้าต้องการตรวจว่าโค้ด compile กับ Paper API ได้ ให้ใช้ `mvn package -Ppaper`
 
 ## คำสั่ง
 
@@ -33,14 +42,16 @@ co-many-world เป็นปลั๊กอินสำหรับ Minecraft 1
 #### คำสั่งพื้นฐาน
 - **วาร์ปไปยังโลก**: `/co-many tp <worldName>`
 - **แสดงรายชื่อโลก**: `/co-many list`
-- **ลบโลก** (ลบโลกออกจาก config.yml เท่านั้น): `/co-many delete <worldName>`
+- **ลบโลก** (ย้ายไปถังขยะ ยังไม่ลบไฟล์): `/co-many delete <worldName>` หรือทั้งกลุ่ม `/co-many delete many_world/<name>/`
 - **นำเข้าโลก**: `/co-many import <worldName>`
 - **สำรองข้อมูลโลก**: `/co-many backup <worldName>`
-- **ลบโลกถาวร (โลกที่อยู่ในถังขยะ)**: `/co-many-clear`
+- **ลบโลกถาวร (โลกที่อยู่ในถังขยะ)**: `/co-many clear` เพื่อดูรายการ แล้ว `/co-many clear confirm` เพื่อลบจริง (หรือ `/co-many-clear confirm`)
 - **ข้อมูลเกี่ยวกับปลั๊กอิน**: `/co-many about`
 
 ## การบันทึกโลก
 - โลกที่ถูกสร้างโดยปลั๊กอินนี้จะถูกบันทึกในรูปแบบ `many_world/custom_world/world` ยกเว้นโลกเริ่มต้นของเซิร์ฟเวอร์
+- ชื่อโลกใช้ได้เฉพาะ `a-z`, `0-9`, `_`, `-` (ตัวพิมพ์ใหญ่จะถูกแปลงเป็นตัวเล็ก)
+- คำสั่ง delete / clear ใช้ได้กับโลกใน `many_world/` เท่านั้น จะไม่ลบโลกหลักของเซิร์ฟเวอร์
   ```text
   many_world/
   └─custom_world/
@@ -61,7 +72,7 @@ co-many-world เป็นปลั๊กอินสำหรับ Minecraft 1
 |-------------------------|-------------------------------------------------------------------------------------------------|-----------------------------------------------------------|
 | co.many.worlds.admin    | /co-many create <br/>/co-many tp <br/> /co-many list <br/> /co-many import <br/> /co-many about <br/> /co-many backup | สิทธิ์ในการจัดการโลก (สร้าง, วาร์ป, รายชื่อโลก, นำเข้าโลก, สำรองข้อมูลโลก) |
 | co.many.worlds.admindel | /co-many delete <worldName>                                                                     | สิทธิ์ในการลบโลก                                          |
-| co.many.worlds.adminclear | /co-many-clear                                                                                | สิทธิ์ในการลบโลกถาวร                                       |
+| co.many.worlds.adminclear | /co-many clear, /co-many-clear                                                                                | สิทธิ์ในการลบโลกถาวร                                       |
 
 ## การตั้งค่า
 
@@ -70,10 +81,14 @@ co-many-world เป็นปลั๊กอินสำหรับ Minecraft 1
 ```yaml
 # Configuration file for CoManyWorld
 default-world-type: -11  # Default to normal world
-default-world: 'World'
+# Where players respawn when they die outside a CoManyWorld world (falls back to "world").
+default-world: 'world'
+# Used for portals when a CoManyWorld world has no Nether / End of its own
+# (only when prevent-single-world-portals is false).
 default-nether-world: 'world_nether'
 default-end-world: 'world_the_end'
-worlds: []   # List of worlds to be loaded on startup
+worlds: []   # List of worlds to be loaded on startup (managed by the plugin)
+prevent-single-world-portals: true  # Prevent portal usage in worlds that don't have all 3 dimensions
 ```
 
 ไฟล์ `delete_worlds.yml` มีไว้เก็บรายชื่อโลกที่ถูกนำออกจาก `config.yml` และรอการลบถาวร:
@@ -83,8 +98,8 @@ delete_worlds: []
 
 ## การนำเข้าโลก
 
-ปลั๊กอินสามารถนำเข้าโลกจากไฟล์ ZIP หรือโฟลเดอร์ได้ โดยจะค้นหาไฟล์ `level.dat` เพื่อระบุตำแหน่งรากของโลก
+นำโฟลเดอร์โลกหรือไฟล์ ZIP ไปไว้ใน `plugins/CoManyWorld/import` แล้วใช้ `/co-many import <ชื่อไฟล์>` ปลั๊กอินจะค้นหาไฟล์ `level.dat` เพื่อระบุตำแหน่งรากของโลก (ไฟล์ `session.lock` และ `uid.dat` จะไม่ถูกคัดลอก) การคัดลอกทำในพื้นหลัง เซิร์ฟเวอร์จะไม่ค้าง
 
 ## การสำรองข้อมูลโลก
 
-คุณสามารถสำรองข้อมูลโลกได้ด้วยคำสั่ง `/co-many backup <worldName>` ไฟล์สำรองข้อมูลจะถูกเก็บไว้ใน `plugins/co-many-world/many_world_backup`
+คุณสามารถสำรองข้อมูลโลกได้ด้วยคำสั่ง `/co-many backup <worldName>` ปลั๊กอินจะ save โลกก่อน แล้วบีบอัดเป็น ZIP ในพื้นหลัง ไฟล์สำรองข้อมูลจะถูกเก็บไว้ใน `plugins/CoManyWorld/many_world_backup` (นำไฟล์นี้ไป import กลับได้)

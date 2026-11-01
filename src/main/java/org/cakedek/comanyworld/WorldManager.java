@@ -2,16 +2,19 @@ package org.cakedek.comanyworld;
 
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerPortalEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
+import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.event.world.WorldLoadEvent;
 import org.bukkit.event.world.WorldUnloadEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 
-public class WorldManager implements Listener {
+public final class WorldManager implements Listener {
 
     private final JavaPlugin plugin;
     private final String defaultWorldName;
@@ -28,135 +31,149 @@ public class WorldManager implements Listener {
 
     @EventHandler
     public void onWorldLoad(WorldLoadEvent event) {
-        World world = event.getWorld();
-        Bukkit.getLogger().info("World loaded: " + world.getName());
+        plugin.getLogger().info("World loaded: " + event.getWorld().getName());
     }
 
     @EventHandler
     public void onWorldUnload(WorldUnloadEvent event) {
-        World world = event.getWorld();
-        Bukkit.getLogger().info("World unloaded: " + world.getName());
+        plugin.getLogger().info("World unloaded: " + event.getWorld().getName());
     }
 
-
-    @EventHandler
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onPlayerRespawn(PlayerRespawnEvent event) {
         if (event.isBedSpawn() || event.isAnchorSpawn()) {
             return;
         }
         World playerWorld = event.getPlayer().getWorld();
-        if (playerWorld.getName().startsWith("many_world/")) {
-            event.setRespawnLocation(playerWorld.getSpawnLocation());
+        if (WorldNames.isManaged(playerWorld.getName())) {
+            // Died in (or left the End of) a CoManyWorld world: respawn in that world group's overworld
+            // when there is one, otherwise at the spawn of the world they were in.
+            World overworld = WorldNames.overworldOf(WorldNames.groupPrefix(playerWorld.getName()));
+            if (overworld != null) {
+                event.setRespawnLocation(overworld.getSpawnLocation());
+            } else if (playerWorld.getEnvironment() != World.Environment.THE_END) {
+                event.setRespawnLocation(playerWorld.getSpawnLocation());
+            } else {
+                World fallback = getDefaultWorld();
+                if (fallback != null) {
+                    event.setRespawnLocation(fallback.getSpawnLocation());
+                }
+            }
         } else {
-            event.setRespawnLocation(getDefaultWorld().getSpawnLocation());
+            World defaultWorld = getDefaultWorld();
+            if (defaultWorld != null) {
+                event.setRespawnLocation(defaultWorld.getSpawnLocation());
+            }
         }
     }
 
-    @EventHandler
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onPlayerPortal(PlayerPortalEvent event) {
         World fromWorld = event.getFrom().getWorld();
-        assert fromWorld != null;
-        String fromWorldName = fromWorld.getName();
-
-        if (plugin.getConfig().getBoolean("prevent-single-world-portals", true)) {
-            if (fromWorldName.startsWith("many_world/")) {
-                String baseWorldPath = fromWorldName.substring(0, fromWorldName.lastIndexOf('/') + 1);
-                boolean hasNormalWorld = Bukkit.getWorld(baseWorldPath + "world") != null;
-                boolean hasNetherWorld = Bukkit.getWorld(baseWorldPath + "world_nether") != null;
-                boolean hasEndWorld = Bukkit.getWorld(baseWorldPath + "world_the_end") != null;
-
-                if (!(hasNormalWorld && hasNetherWorld && hasEndWorld)) {
-                    event.setCancelled(true);
-                    event.getPlayer().sendMessage("Portal travel is disabled in single worlds.");
-                    return;
-                }
-            }
+        if (fromWorld == null || !WorldNames.isManaged(fromWorld.getName())) {
+            // Portals in the server's own worlds keep their vanilla behaviour.
+            return;
+        }
+        PlayerTeleportEvent.TeleportCause cause = event.getCause();
+        if (cause != PlayerTeleportEvent.TeleportCause.NETHER_PORTAL
+                && cause != PlayerTeleportEvent.TeleportCause.END_PORTAL) {
+            return; // e.g. end gateways inside the End
         }
 
-        // Extract base world path and name
-        String baseWorldPath = fromWorldName.contains("/") ? fromWorldName.substring(0, fromWorldName.lastIndexOf('/') + 1) : "";
+        String prefix = WorldNames.groupPrefix(fromWorld.getName());
+        World overworld = WorldNames.overworldOf(prefix);
+        World nether = WorldNames.netherOf(prefix);
+        World end = WorldNames.endOf(prefix);
 
-        World toWorld;
+        if (plugin.getConfig().getBoolean("prevent-single-world-portals", true)
+                && (overworld == null || nether == null || end == null)) {
+            event.setCancelled(true);
+            event.getPlayer().sendMessage("Portal travel is disabled in single worlds.");
+            return;
+        }
 
-        if (fromWorld.getEnvironment() == World.Environment.NORMAL) {
-            if (event.getCause() == PlayerPortalEvent.TeleportCause.END_PORTAL) {
-                // If traveling through an end portal
-                toWorld = Bukkit.getWorld(baseWorldPath + "world_the_end");
-                if (toWorld == null) {
-                    // If custom End world doesn't exist, use main End world
-                    toWorld = Bukkit.getWorld(mainEndWorld);
-                }
+        World.Environment environment = fromWorld.getEnvironment();
+        if (environment == World.Environment.NORMAL) {
+            if (cause == PlayerTeleportEvent.TeleportCause.END_PORTAL) {
+                World toWorld = end != null ? end : Bukkit.getWorld(mainEndWorld);
                 if (toWorld != null) {
-                    int highestY = toWorld.getHighestBlockYAt(100, 0);
-                    Location customEndLocation = new Location(toWorld, 100, highestY + 2, 0);
-                    event.setTo(customEndLocation);
+                    event.setTo(endPlatform(toWorld));
                 } else {
-                    event.setTo(getDefaultWorld().getSpawnLocation());
+                    cancel(event, "There is no End world to travel to.");
                 }
             } else {
-                // If traveling through a nether portal
-                toWorld = Bukkit.getWorld(baseWorldPath + "world_nether");
-                if (toWorld == null) {
-                    // If custom Nether world doesn't exist, use main Nether world
-                    toWorld = Bukkit.getWorld(mainNetherWorld);
-                }
+                World toWorld = nether != null ? nether : Bukkit.getWorld(mainNetherWorld);
                 if (toWorld != null) {
-                    Location toLocation = calculateNetherLocation(event.getFrom(), toWorld);
-                    event.setTo(toLocation);
+                    event.setTo(scaled(event.getFrom(), toWorld, 1.0 / 8.0));
                 } else {
-                    event.setTo(getDefaultWorld().getSpawnLocation());
+                    cancel(event, "There is no Nether world to travel to.");
                 }
             }
-        } else if (fromWorld.getEnvironment() == World.Environment.NETHER) {
+        } else if (environment == World.Environment.NETHER) {
             // When returning from Nether, try to find the corresponding overworld
-            toWorld = Bukkit.getWorld(baseWorldPath + "world");
-            if (toWorld == null) {
-                // If corresponding overworld doesn't exist, use default world
-                toWorld = getDefaultWorld();
-            }
+            World toWorld = overworld != null ? overworld : getDefaultWorld();
             if (toWorld != null) {
-                Location toLocation = calculateOverworldLocation(event.getFrom(), toWorld);
-                event.setTo(toLocation);
+                event.setTo(scaled(event.getFrom(), toWorld, 8.0));
             } else {
-                event.setTo(getDefaultWorld().getSpawnLocation());
+                cancel(event, "There is no overworld to travel to.");
             }
-        } else if (fromWorld.getEnvironment() == World.Environment.THE_END) {
+        } else if (environment == World.Environment.THE_END) {
             // When returning from The End, try to find the corresponding overworld
-            toWorld = Bukkit.getWorld(baseWorldPath + "world");
-            if (toWorld == null) {
-                // If corresponding overworld doesn't exist, use default world
-                toWorld = getDefaultWorld();
-            }
+            World toWorld = overworld != null ? overworld : getDefaultWorld();
             if (toWorld != null) {
                 event.setTo(toWorld.getSpawnLocation());
             } else {
-                event.setTo(getDefaultWorld().getSpawnLocation());
+                cancel(event, "There is no overworld to travel to.");
             }
         }
+    }
+
+    private static void cancel(PlayerPortalEvent event, String message) {
+        event.setCancelled(true);
+        event.getPlayer().sendMessage(message);
     }
 
     private World getDefaultWorld() {
         World defaultWorld = Bukkit.getWorld(defaultWorldName);
         if (defaultWorld == null) {
-            // Fallback to "world" if the configured default world does not exist
-            defaultWorld = Bukkit.getWorld("world");
+            // Fallback to the server's main world if the configured default world does not exist
+            defaultWorld = Bukkit.getWorlds().isEmpty() ? null : Bukkit.getWorlds().get(0);
         }
         return defaultWorld;
     }
 
-    private Location calculateNetherLocation(Location fromLocation, World toWorld) {
-        // Convert Overworld coordinates to Nether coordinates
-        double toX = fromLocation.getX() / 8.0;
-        double toZ = fromLocation.getZ() / 8.0;
-        int highestY = toWorld.getHighestBlockYAt((int) toX, (int) toZ);
-        return new Location(toWorld, toX, highestY + 2, toZ);
+    /**
+     * Nether <-> overworld coordinates. The server then searches for (or builds) a portal near this
+     * location, like vanilla does, so the Y only needs to be inside the usable height of the target world.
+     */
+    private static Location scaled(Location from, World toWorld, double scale) {
+        double x = from.getX() * scale;
+        double z = from.getZ() * scale;
+        int minY = toWorld.getMinHeight() + 1;
+        // Nether: stay below the bedrock roof (logical height 128)
+        int maxY = toWorld.getEnvironment() == World.Environment.NETHER
+                ? Math.min(toWorld.getMaxHeight(), toWorld.getMinHeight() + 128) - 8
+                : toWorld.getMaxHeight() - 2;
+        double y = Math.max(minY, Math.min(maxY, from.getY()));
+        return new Location(toWorld, x, y, z, from.getYaw(), from.getPitch());
     }
 
-    private Location calculateOverworldLocation(Location fromLocation, World toWorld) {
-        // Convert Nether coordinates to Overworld coordinates
-        double toX = fromLocation.getX() * 8.0;
-        double toZ = fromLocation.getZ() * 8.0;
-        int highestY = toWorld.getHighestBlockYAt((int) toX, (int) toZ);
-        return new Location(toWorld, toX, highestY + 2, toZ);
+    /**
+     * Vanilla End arrival point (100, 49, 0) with the 5x5 obsidian platform under it,
+     * so players never land over the void in a freshly generated End.
+     */
+    private static Location endPlatform(World end) {
+        int px = 100;
+        int py = 49;
+        int pz = 0;
+        for (int x = px - 2; x <= px + 2; x++) {
+            for (int z = pz - 2; z <= pz + 2; z++) {
+                end.getBlockAt(x, py - 1, z).setType(Material.OBSIDIAN, false);
+                for (int y = py; y <= py + 2; y++) {
+                    end.getBlockAt(x, y, z).setType(Material.AIR, false);
+                }
+            }
+        }
+        return new Location(end, px + 0.5, py, pz + 0.5, 90f, 0f);
     }
 }

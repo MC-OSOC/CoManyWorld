@@ -1,33 +1,29 @@
 package org.cakedek.comanyworld;
 
-import net.md_5.bungee.api.ChatColor;
 import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
 import org.bukkit.World;
-import org.bukkit.WorldCreator;
-import org.bukkit.boss.BarColor;
-import org.bukkit.boss.BarStyle;
-import org.bukkit.boss.BossBar;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
-import org.bukkit.scheduler.BukkitRunnable;
 import org.cakedek.comanyworld.cm.*;
 
-import java.util.List;
-
 public class CommandHandler implements CommandExecutor {
+
+    static final String PERM_DELETE = "co.many.worlds.admindel";
+    static final String PERM_CLEAR = "co.many.worlds.adminclear";
 
     // COMMAND IN
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        String se =     ChatColor.GOLD + "=== Many World \n" + ChatColor.RESET +
+        String se = ChatColor.GOLD + "=== Many World \n" + ChatColor.RESET +
                 ChatColor.YELLOW + "/co-many create [worldName] [-11|-12|-13|-all] [-s<seed>] " + ChatColor.RESET + ">> Create a new world\n" +
                 ChatColor.YELLOW + "/co-many list " + ChatColor.RESET + ">> world list \n" +
                 ChatColor.YELLOW + "/co-many tp [worldName] " + ChatColor.RESET + ">> tp to world\n" +
                 ChatColor.YELLOW + "/co-many import [worldName] " + ChatColor.RESET + ">> Import World \n" +
-                ChatColor.YELLOW + "/co-many delete [worldName] " + ChatColor.RESET + ">> Delete world\n" +
-                ChatColor.YELLOW + "/co-many clear " + ChatColor.RESET + ">> Clear the permanent trash world\n" +
+                ChatColor.YELLOW + "/co-many delete [worldName] " + ChatColor.RESET + ">> Delete world (move to trash)\n" +
+                ChatColor.YELLOW + "/co-many clear [confirm] " + ChatColor.RESET + ">> Clear the permanent trash world\n" +
                 ChatColor.YELLOW + "/co-many backup [worldName] " + ChatColor.RESET + ">> Backup world\n" +
                 ChatColor.YELLOW + "/co-many about " + ChatColor.RESET + ">> About \n";
         if (args.length == 0) {
@@ -37,7 +33,7 @@ public class CommandHandler implements CommandExecutor {
         //////  CREATE
         if (args[0].equalsIgnoreCase("create")) {
             if (args.length < 3) {
-                sender.sendMessage(ChatColor.GOLD+"=== Many World > Create "+ ChatColor.RESET +
+                sender.sendMessage(ChatColor.GOLD + "=== Many World > Create " + ChatColor.RESET +
                         "\n-11 [WORLD] " +
                         "\n-12 [NETHER] " +
                         "\n-13 [THE_END] " +
@@ -63,13 +59,11 @@ public class CommandHandler implements CommandExecutor {
                         sender.sendMessage(ChatColor.RED + "Invalid seed format. Please use a number.");
                         return true;
                     }
+                } else if (arg.equals("-11") || arg.equals("-12") || arg.equals("-13")) {
+                    worldType = Integer.parseInt(arg);
                 } else {
-                    try {
-                        worldType = Integer.parseInt(arg);
-                    } catch (NumberFormatException e) {
-                        sender.sendMessage(ChatColor.RED + "Invalid world type. Use -11, -12, -13, or -all.");
-                        return true;
-                    }
+                    sender.sendMessage(ChatColor.RED + "Invalid world type. Use -11, -12, -13, or -all.");
+                    return true;
                 }
             }
 
@@ -83,13 +77,11 @@ public class CommandHandler implements CommandExecutor {
                 return true;
             }
             if (args.length < 2) {
-                //////////////////////////////////////////////////////////////////////////////////////////////
-                sender.sendMessage(     ChatColor.GOLD + "=== Many World > Teleport "+ ChatColor.RESET +
-                                        "\nCommand: /co-many tp <worldName>");
+                sender.sendMessage(ChatColor.GOLD + "=== Many World > Teleport " + ChatColor.RESET +
+                        "\nCommand: /co-many tp <worldName>");
                 return true;
             }
-            String worldName = args[1];
-            teleportPlayer((Player) sender, worldName);
+            teleportPlayer((Player) sender, args[1]);
         }
         //////  LIST
         else if (args[0].equalsIgnoreCase("list")) {
@@ -97,23 +89,25 @@ public class CommandHandler implements CommandExecutor {
         }
         //////  DELETE
         else if (args[0].equalsIgnoreCase("delete")) {
-            if (args.length < 2) {
-                sender.sendMessage(ChatColor.GOLD +  "=== Many World > Delete World "+ ChatColor.RESET +
-                                                        "\nCommand: /co-many delete <worldName>");
+            if (!sender.hasPermission(PERM_DELETE)) {
+                sender.sendMessage(ChatColor.RED + "You don't have permission to delete worlds.");
                 return true;
             }
-            String worldName = args[1];
-            WorldDelete.deleteWorlds(sender, worldName);
+            if (args.length < 2) {
+                sender.sendMessage(ChatColor.GOLD + "=== Many World > Delete World " + ChatColor.RESET +
+                        "\nCommand: /co-many delete <worldName>");
+                return true;
+            }
+            WorldDelete.deleteWorlds(sender, args[1]);
         }
         //////  IMPORT
         else if (args[0].equalsIgnoreCase("import")) {
             if (args.length == 2) {
-                String worldName = args[1];
-                WorldImport.importWorld(sender ,worldName);
+                WorldImport.importWorld(sender, args[1]);
             } else {
-                //////////////////////////////////////////////////////////////////////////////////////////////
-                sender.sendMessage(     ChatColor.GOLD + "=== Many World > Import World "+ ChatColor.RESET +
-                                                            "\nCommand: /co-many import <worldName>");
+                sender.sendMessage(ChatColor.GOLD + "=== Many World > Import World " + ChatColor.RESET +
+                        "\nPut a world folder or .zip in plugins/" + CoManyWorld.getInstance().getName() + "/import" +
+                        "\nCommand: /co-many import <worldName>");
             }
             return true;
         }
@@ -123,26 +117,28 @@ public class CommandHandler implements CommandExecutor {
                 sender.sendMessage(ChatColor.RED + "Usage: /co-many backup <worldName>");
                 return true;
             }
-            String worldName = args[1];
-            WorldBackup.backupWorld(sender, worldName);
+            WorldBackup.backupWorld(sender, args[1]);
         }
         //////  CLEAR WORLD
         else if (args[0].equalsIgnoreCase("clear")) {
-            WorldClear.clearDeletedWorlds(sender);
+            if (!sender.hasPermission(PERM_CLEAR)) {
+                sender.sendMessage(ChatColor.RED + "You don't have permission to clear deleted worlds.");
+                return true;
+            }
+            boolean confirm = args.length >= 2 && args[1].equalsIgnoreCase("confirm");
+            WorldClear.clearDeletedWorlds(sender, confirm);
         }
         //////  ABOUT
         else if (args[0].equalsIgnoreCase("about")) {
-            sender.sendMessage(ChatColor.GOLD  + "=== Many World List > About \n" + ChatColor.RESET +
+            sender.sendMessage(ChatColor.GOLD + "=== Many World List > About \n" + ChatColor.RESET +
                     "Version >>> " + CoManyWorld.getInstance().getDescription().getVersion() + "\n" +
-                    "Minecraft Server Version >>> " + Bukkit.getVersion() + "\n" +
+                    "Minecraft Server Version >>> " + Platform.describe() + "\n" +
                     "->->->\n" +
                     "MC-OSOC \n" +
                     "github >>> https://github.com/MC-OSOC\n" +
                     "*** Some of the code was developed by AI.\n" +
                     "===============================");
-        }
-
-        else {
+        } else {
             sender.sendMessage(se);
         }
         return true;
@@ -151,12 +147,17 @@ public class CommandHandler implements CommandExecutor {
 
     // วาร์ปผู้เล่นไปยังโลกที่สร้างไว่้
     private void teleportPlayer(Player player, String worldName) {
-        World world = Bukkit.getWorld((worldName));
+        World world = Bukkit.getWorld(worldName);
         if (world == null) {
             player.sendMessage(ChatColor.RED + "World " + ChatColor.WHITE + worldName + ChatColor.RED + " does not exist.");
             return;
         }
-        player.teleport(world.getSpawnLocation());
-        player.sendMessage(ChatColor.GREEN + "Teleported to " + ChatColor.WHITE + worldName + ChatColor.GREEN + ".");
+        Platform.teleport(player, world.getSpawnLocation()).thenAccept(success -> {
+            if (success) {
+                player.sendMessage(ChatColor.GREEN + "Teleported to " + ChatColor.WHITE + world.getName() + ChatColor.GREEN + ".");
+            } else {
+                player.sendMessage(ChatColor.RED + "Teleport to " + ChatColor.WHITE + world.getName() + ChatColor.RED + " was cancelled.");
+            }
+        });
     }
 }

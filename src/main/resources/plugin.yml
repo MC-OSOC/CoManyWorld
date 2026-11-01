@@ -1,24 +1,27 @@
 name: CoManyWorld
-version: 1.0.5-Preview
+version: '${project.version}'
 main: org.cakedek.comanyworld.CoManyWorld
-description: A multi-world plugin for Minecraft 1.21.x
+# Oldest supported server version. Works on Spigot and Paper 1.21 and newer (including 26.x).
+api-version: '1.21'
+description: A multi-world plugin for Spigot and Paper (Minecraft 1.21+)
 author: CakeDek [MC-OSOC]
+website: https://github.com/MC-OSOC/CoManyWorld
 commands:
   co-many:
     description: Commands for managing multiple worlds
-    usage: /co-many <create|tp|list|delete|import|backup> [worldName] [worldType]
+    usage: /co-many <create|tp|list|delete|import|backup|clear|about> [worldName] [worldType]
     permission: co.many.worlds.admin
   co-many-clear:
-    description: Clear deleted worlds from delete_worlds.yml and delete their folders
-    usage: /co-many-clear
+    description: Permanently delete the worlds waiting in delete_worlds.yml
+    usage: /co-many-clear [confirm]
     permission: co.many.worlds.adminclear
 permissions:
   co.many.worlds.admin:
-    description: Allows admin to manage worlds
+    description: Allows admin to manage worlds (create, tp, list, import, backup, about)
     default: op
   co.many.worlds.admindel:
-    description: Allows admin to delete worlds
+    description: Allows admin to delete worlds (move them to the trash)
     default: op
   co.many.worlds.adminclear:
-    description: Allows admin to clear deleted worlds
+    description: Allows admin to permanently delete worlds in the trash
     default: op

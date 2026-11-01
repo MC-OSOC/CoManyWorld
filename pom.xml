@@ -6,14 +6,22 @@
 
   <groupId>org.cakedek</groupId>
   <artifactId>CoManyWorld</artifactId>
-  <version>1.0.5-Preview</version>
+  <version>1.1.0-Preview</version>
   <packaging>jar</packaging>
 
   <name>CoManyWorld</name>
 
   <properties>
-    <java.version>1.8</java.version>
+    <!-- Minecraft 1.20.5+ servers require Java 21, so there is no reason to target anything older. -->
+    <maven.compiler.release>21</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <!--
+      Compiled against the 1.21.x API line so the same jar runs on Spigot and Paper
+      from 1.21 up to the current 26.x releases. Only the plain Bukkit/Spigot API is
+      used; Paper-only features are looked up at runtime (see Platform.java).
+    -->
+    <spigot.api.version>1.21.11-R0.1-SNAPSHOT</spigot.api.version>
+    <paper.api.version>1.21.11-R0.1-SNAPSHOT</paper.api.version>
   </properties>
 
   <build>
@@ -21,24 +29,17 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
-        <version>3.8.1</version>
-        <configuration>
-          <source>${java.version}</source>
-          <target>${java.version}</target>
-        </configuration>
+        <version>3.14.0</version>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-shade-plugin</artifactId>
-        <version>3.2.4</version>
-        <executions>
-          <execution>
-            <phase>package</phase>
-            <goals>
-              <goal>shade</goal>
-            </goals>
-          </execution>
-        </executions>
+        <artifactId>maven-resources-plugin</artifactId>
+        <version>3.3.1</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.4.2</version>
       </plugin>
     </plugins>
     <resources>
@@ -49,23 +50,50 @@
     </resources>
   </build>
 
-  <repositories>
-      <repository>
+  <profiles>
+    <!-- Default: mvn package  (Spigot API; the jar runs on Spigot and Paper) -->
+    <profile>
+      <id>spigot</id>
+      <activation>
+        <activeByDefault>true</activeByDefault>
+      </activation>
+      <repositories>
+        <repository>
           <id>spigotmc-repo</id>
           <url>https://hub.spigotmc.org/nexus/content/repositories/snapshots/</url>
-      </repository>
-      <repository>
-          <id>sonatype</id>
-          <url>https://oss.sonatype.org/content/groups/public/</url>
-      </repository>
-  </repositories>
-
-  <dependencies>
-      <dependency>
+        </repository>
+      </repositories>
+      <dependencies>
+        <dependency>
           <groupId>org.spigotmc</groupId>
           <artifactId>spigot-api</artifactId>
-          <version>1.21-R0.1-SNAPSHOT</version>
+          <version>${spigot.api.version}</version>
           <scope>provided</scope>
-      </dependency>
-  </dependencies>
+        </dependency>
+      </dependencies>
+    </profile>
+
+    <!--
+      mvn package -Ppaper
+      Builds against the Paper API instead, to check the code also compiles there.
+      It produces the same plugin; you do not need a separate jar for Paper.
+    -->
+    <profile>
+      <id>paper</id>
+      <repositories>
+        <repository>
+          <id>papermc</id>
+          <url>https://repo.papermc.io/repository/maven-public/</url>
+        </repository>
+      </repositories>
+      <dependencies>
+        <dependency>
+          <groupId>io.papermc.paper</groupId>
+          <artifactId>paper-api</artifactId>
+          <version>${paper.api.version}</version>
+          <scope>provided</scope>
+        </dependency>
+      </dependencies>
+    </profile>
+  </profiles>
 </project>
