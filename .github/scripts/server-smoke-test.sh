@@ -19,7 +19,6 @@ cp "$PLUGIN_JAR" plugins/
 echo "eula=true" > eula.txt
 cat > server.properties <<'EOF'
 online-mode=false
-level-type=minecraft\:flat
 generate-structures=false
 spawn-protection=0
 view-distance=4
@@ -115,9 +114,11 @@ run() {
 expect_dir() { [ -d "$1" ] || fail "Folder missing: $1"; echo "  ok: folder $1 exists"; }
 expect_gone() { [ ! -e "$1" ] || fail "Should have been deleted: $1"; echo "  ok: $1 was deleted"; }
 
+# Where the server really put the worlds (Paper 26.x keeps them inside the main world's folder).
 show_worlds() {
   echo "World folders:"
-  find many_world -maxdepth 3 2>/dev/null | sort | sed 's/^/  /' || true
+  find . -path ./plugins -prune -o -type d \( -path '*smoke*' -o -path '*restored*' -o -name dimensions \) -print \
+    | grep -vE '/(region|entities|poi|data|DIM-?1)(/|$)' | sort | sed 's/^/  /' || true
 }
 
 ######## 1st start: create, list, backup, import ########
