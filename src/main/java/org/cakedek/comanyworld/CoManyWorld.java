@@ -63,8 +63,9 @@ public class CoManyWorld extends JavaPlugin {
             if (Bukkit.getWorld(worldName) != null) {
                 continue; // already loaded (e.g. by another plugin or a /reload)
             }
-            File folder = WorldNames.managedFolder(worldName);
-            if (folder == null || !folder.isDirectory()) {
+            // The folder can be in the old place (<server>/many_world/...) or, on Paper 26.x,
+            // in world/dimensions/minecraft/many_world/... Paper moves it there itself when it loads it.
+            if (WorldFolders.managedFolders(worldName).stream().noneMatch(File::isDirectory)) {
                 // Don't silently generate a brand new world when the folder was removed or moved.
                 getLogger().warning("Skipping world '" + worldName + "' from config.yml: its folder does not exist"
                         + " or is not inside " + WorldNames.ROOT);

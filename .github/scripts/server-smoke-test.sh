@@ -16,7 +16,7 @@ PLUGIN_JAR=$(realpath "$2")
 DIR=$3
 OLD_SERVER_JAR=${4:+$(realpath "$4")}
 START_TIMEOUT=${START_TIMEOUT:-600}
-STEP_TIMEOUT=${STEP_TIMEOUT:-300}
+STEP_TIMEOUT=${STEP_TIMEOUT:-120}
 
 mkdir -p "$DIR/plugins"
 cd "$DIR"
@@ -125,9 +125,21 @@ send() {
   wait_for "$from" "$STEP_TIMEOUT" "$2"
 }
 
-# run <console command> <exact text that must appear in the answer>
+# Answers of the plugin that mean a command failed.
+PLUGIN_ERRORS='Failed|failed|not found|Invalid|Skipped|Could not|can only be imported|Not enough|does not exist'
+
+# run <console command> <exact text that must appear in the answer> [<grep -E pattern that means it failed>]
 run() {
-  send "$1" "$(fixed "$2")" > /dev/null
+  local answer
+  if [ -n "${3:-}" ]; then
+    answer=$(send "$1" "$(fixed "$2")|$3")
+    case "$answer" in
+      *"$2"*) ;;
+      *) fail "'$1' failed: $answer" ;;
+    esac
+  else
+    send "$1" "$(fixed "$2")" > /dev/null
+  fi
   echo "  ok: $2"
 }
 
@@ -187,6 +199,9 @@ if [ -n "$OLD_SERVER_JAR" ]; then
   run "co-many create legacy -all" \
       "World legacy created: many_world/legacy/world, many_world/legacy/world_nether, many_world/legacy/world_the_end"
   set_marker many_world/legacy/world
+  # A backup made on the old server, imported on the new one below
+  run "co-many backup many_world/legacy/world" "backed up successfully" "$PLUGIN_ERRORS"
+  cp "$(find plugins/CoManyWorld/many_world_backup -name '*many_world_legacy_world*.zip' | head -n 1)" old-server-backup.zip
   show_worlds
   stop_server
 fi
@@ -199,12 +214,16 @@ if [ -n "$OLD_SERVER_JAR" ]; then
   expect_since_start "Loading world: many_world/legacy/world_nether with environment: NETHER"
   expect_since_start "Loading world: many_world/legacy/world_the_end with environment: THE_END"
   expect_marker many_world/legacy/world passed
+  expect_world many_world/legacy/world
+  cp old-server-backup.zip plugins/CoManyWorld/import/oldbackup.zip
+  run "co-many import oldbackup.zip" "World oldbackup has been successfully imported to many_world/oldbackup/world" "$PLUGIN_ERRORS"
+  expect_marker many_world/oldbackup/world passed
 fi
 
-run "co-many about" "Minecraft Server Version >>>"
+run "co-many about" "World folders >>>"
 
 run "co-many create smoke -all" \
-    "World smoke created: many_world/smoke/world, many_world/smoke/world_nether, many_world/smoke/world_the_end"
+    "World smoke created: many_world/smoke/world, many_world/smoke/world_nether, many_world/smoke/world_the_end" "$PLUGIN_ERRORS"
 show_worlds
 expect_world many_world/smoke/world
 expect_world many_world/smoke/world_nether
@@ -214,8 +233,8 @@ run "co-many create smoke -all" "already exists"
 run "co-many list" "many_world/smoke/world_the_end"
 set_marker many_world/smoke/world
 
-run "co-many backup many_world/smoke/world" "backed up successfully"
-BACKUP=$(find plugins/CoManyWorld/many_world_backup -name '*.zip' | head -n 1)
+run "co-many backup many_world/smoke/world" "backed up successfully" "$PLUGIN_ERRORS"
+BACKUP=$(find plugins/CoManyWorld/many_world_backup -name '*many_world_smoke_world*.zip' | head -n 1)
 [ -n "$BACKUP" ] || fail "No backup zip in plugins/CoManyWorld/many_world_backup"
 echo "  ok: $BACKUP"
 echo "Backup contents:"
@@ -223,7 +242,7 @@ unzip -Z1 "$BACKUP" | grep -vE '/(region|entities|poi)/.' | head -n 40 | sed 's/
 
 # Import the backup again under a new name; it must contain the marker block.
 cp "$BACKUP" plugins/CoManyWorld/import/restored.zip
-run "co-many import restored.zip" "World restored has been successfully imported to many_world/restored/world"
+run "co-many import restored.zip" "World restored has been successfully imported to many_world/restored/world" "$PLUGIN_ERRORS"
 expect_world many_world/restored/world
 expect_marker many_world/restored/world passed
 
@@ -235,28 +254,39 @@ expect_since_start "Loading world: many_world/smoke/world with environment: NORM
 expect_since_start "Loading world: many_world/smoke/world_nether with environment: NETHER"
 expect_since_start "Loading world: many_world/smoke/world_the_end with environment: THE_END"
 expect_since_start "Loading world: many_world/restored/world with environment: NORMAL"
+if [ -n "$OLD_SERVER_JAR" ]; then
+  # Paper 26.x moved these out of <server>/many_world on the first start; they must still be found.
+  expect_since_start "Loading world: many_world/legacy/world with environment: NORMAL"
+  expect_since_start "Loading world: many_world/oldbackup/world with environment: NORMAL"
+fi
 if plain_log | tail -n "+$START_LINE" | grep -F -e "Skipping world" -e "Failed to load world" > /dev/null; then
   fail "Some worlds from config.yml did not load"
 fi
 expect_marker many_world/smoke/world passed
+expect_marker many_world/restored/world passed
+if [ -n "$OLD_SERVER_JAR" ]; then
+  expect_marker many_world/legacy/world passed
+fi
 
 run "co-many list" "many_world/restored/world"
 
 run "co-many delete many_world/smoke/" "Use /co-many clear confirm to permanently delete these worlds."
-run "co-many clear confirm" "Deleted world folder: many_world/smoke/world_the_end"
+run "co-many clear confirm" "Deleted world folder: many_world/smoke/world_the_end" "$PLUGIN_ERRORS"
 expect_world_gone many_world/smoke/world
 expect_world_gone many_world/smoke/world_nether
 expect_world_gone many_world/smoke/world_the_end
 expect_world many_world/restored/world
 
 # The name can be used again, and the new world really is new.
-run "co-many create smoke -11" "World smoke created: many_world/smoke/world"
+run "co-many create smoke" "World smoke created: many_world/smoke/world" "$PLUGIN_ERRORS"
 expect_marker many_world/smoke/world failed
 
 if [ -n "$OLD_SERVER_JAR" ]; then
   run "co-many delete many_world/legacy/" "Use /co-many clear confirm to permanently delete these worlds."
-  run "co-many clear confirm" "Deleted world folder: many_world/legacy/world_the_end"
+  run "co-many clear confirm" "Deleted world folder: many_world/legacy/world_the_end" "$PLUGIN_ERRORS"
   expect_world_gone many_world/legacy/world
+  expect_world_gone many_world/legacy/world_nether
+  expect_world_gone many_world/legacy/world_the_end
 fi
 show_worlds
 
