@@ -1,0 +1,40 @@
+# Builds the plugin and runs the tests on every pull request and on every push to main.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Test (Paper API + MockBukkit)
+        run: mvn -B -Ppaper clean verify
+
+      - name: Build plugin jar (Spigot API)
+        run: mvn -B clean package
+
+      - name: Upload jar
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: CoManyWorld-${{ github.sha }}
+          path: target/CoManyWorld-*.jar
+          if-no-files-found: error
+          retention-days: 14

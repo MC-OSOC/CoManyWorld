@@ -29,6 +29,8 @@ mvn package
 ไฟล์จะอยู่ที่ `target/CoManyWorld-<version>.jar` ใช้ได้ทั้ง Spigot และ Paper
 ถ้าต้องการตรวจว่าโค้ด compile กับ Paper API ได้ และรันชุดทดสอบ (MockBukkit) ให้ใช้ `mvn package -Ppaper`
 
+การออก Release ผ่าน GitHub Actions: ดู [docs/RELEASING.md](docs/RELEASING.md)
+
 ## คำสั่ง
 
 #### สร้างโลกใหม่

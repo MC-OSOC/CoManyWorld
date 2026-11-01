@@ -1,0 +1,8 @@
+# Opens pull requests when the GitHub Actions used in .github/workflows have new versions
+# (the workflows pin each action to a commit SHA, Dependabot keeps those up to date).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

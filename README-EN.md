@@ -29,6 +29,8 @@ mvn package
 The jar is written to `target/CoManyWorld-<version>.jar` and works on both Spigot and Paper.
 To check that the code also compiles against the Paper API and run the tests (MockBukkit), use `mvn package -Ppaper`.
 
+Releases are built by GitHub Actions: see [docs/RELEASING.md](docs/RELEASING.md) (Thai).
+
 ## Commands
 
 #### Create a new world
