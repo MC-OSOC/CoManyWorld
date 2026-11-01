@@ -57,10 +57,18 @@ public class WorldBackup {
         // Entries are stored as "<folder name>/..." so the zip can be imported again with /co-many import.
         String rootEntry = source.getFileName().toString();
 
-        // Write everything to disk first and pause autosave so the files don't change while zipping.
-        world.save();
+        // Like a manual backup (save-off, save-all flush, copy, save-on): pause saving so the files don't
+        // change while zipping, then write everything to disk and WAIT for it. world.save() alone only
+        // queues the chunks; the server writes region files in the background, so zipping right after it
+        // could copy half-written region files (chunks "in the wrong location" after an import).
         boolean autoSave = world.isAutoSave();
         world.setAutoSave(false);
+        world.save();
+        try {
+            Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "save-all flush");
+        } catch (RuntimeException e) {
+            plugin.getLogger().log(Level.WARNING, "save-all flush failed, the backup may contain unsaved chunks", e);
+        }
 
         BossBar progressBar = Bukkit.createBossBar(ChatColor.GREEN + "Backing up world: " + name, BarColor.BLUE, BarStyle.SOLID);
         progressBar.setProgress(0.0);
