@@ -99,6 +99,8 @@ public class WorldImport {
         }
         // Worked out here, on the main thread, because it asks the server about its worlds.
         File levelDatTarget = WorldFolders.legacyFolder(worldName);
+        // import-max-size-mb in config.yml, 0 = only limited by the free disk space
+        long maxBytes = Math.max(0, plugin.getConfig().getLong("import-max-size-mb", 0)) * 1024 * 1024;
         File dimensionTarget = WorldFolders.usesDimensionFolders() ? WorldFolders.dimensionFolder(worldName) : null;
         // The group folders don't exist yet (checked above), so on failure they can be removed entirely.
         List<File> createdGroups = new ArrayList<>();
@@ -114,8 +116,8 @@ public class WorldImport {
             String error = null;
             try {
                 error = isZip
-                        ? copyFromZip(worldFile, levelDatTarget, dimensionTarget)
-                        : copyFromFolder(worldFile, levelDatTarget, dimensionTarget);
+                        ? copyFromZip(worldFile, levelDatTarget, dimensionTarget, maxBytes)
+                        : copyFromFolder(worldFile, levelDatTarget, dimensionTarget, maxBytes);
             } catch (IOException | RuntimeException e) {
                 error = "Failed to import world: " + e.getMessage();
                 plugin.getLogger().log(Level.SEVERE, "Failed to import world " + fileName, e);
@@ -157,7 +159,7 @@ public class WorldImport {
     }
 
     /** Returns an error message, or null when the world was copied. */
-    private static String copyFromFolder(File source, File levelDatTarget, File dimensionTarget) throws IOException {
+    private static String copyFromFolder(File source, File levelDatTarget, File dimensionTarget, long maxBytes) throws IOException {
         Found found = findWorldRoot(source, 0);
         if (found == null) {
             return "level.dat not found in the provided folder (and it is not a Paper 26 world folder either).";
@@ -167,20 +169,21 @@ public class WorldImport {
             return paperOnlyMessage();
         }
         long size = sizeOf(found.folder().toPath());
-        if (size > freeSpace(target)) {
-            return "Not enough free disk space to import this world (" + (size / (1024 * 1024)) + " MB).";
+        if (size > limit(maxBytes, freeSpace(target))) {
+            return "This world is too big to import (" + (size / (1024 * 1024)) + " MB): not enough free disk space,"
+                    + " or bigger than import-max-size-mb in config.yml.";
         }
         copyFolder(found.folder().toPath(), target.toPath(), found.format());
         return null;
     }
 
-    private static String copyFromZip(File zipFile, File levelDatTarget, File dimensionTarget) throws IOException {
+    private static String copyFromZip(File zipFile, File levelDatTarget, File dimensionTarget, long maxBytes) throws IOException {
         File cacheFolder = new File(CoManyWorld.getInstance().getDataFolder(), "import/cache");
         cacheFolder.mkdirs();
         Path tempDir = Files.createTempDirectory(cacheFolder.toPath(), "temp");
         try {
             // The world is unpacked here and then copied once more, so it may use half of the free space.
-            unzip(zipFile, tempDir, freeSpace(cacheFolder) / 2);
+            unzip(zipFile, tempDir, limit(maxBytes, freeSpace(cacheFolder) / 2));
             Found found = findWorldRoot(tempDir.toFile(), 0);
             if (found == null) {
                 return "Failed to find or extract world data from the zip file (no level.dat, and not a Paper 26 world folder).";
@@ -248,7 +251,8 @@ public class WorldImport {
                         while ((read = zis.read(buffer)) > 0) {
                             written += read;
                             if (written > maxBytes) {
-                                throw new IOException("the zip file unpacks to more than the free disk space allows");
+                                throw new IOException("the zip file unpacks to more than the free disk space"
+                                        + " or import-max-size-mb in config.yml allows");
                             }
                             out.write(buffer, 0, read);
                         }
@@ -294,6 +298,11 @@ public class WorldImport {
                     .mapToLong(path -> path.toFile().length())
                     .sum();
         }
+    }
+
+    /** The configured limit (0 = none) or the free space, whichever is smaller. */
+    private static long limit(long configured, long free) {
+        return configured > 0 ? Math.min(configured, free) : free;
     }
 
     /** Free space on the disk the file will be written to, minus what must stay free. */

@@ -7,6 +7,11 @@
 # With an older server jar, a world group is first created on that server and must still be there,
 # with the same blocks, after the upgrade.
 #
+# Optional environment:
+#   OTHER_SERVER_JAR  a different server (e.g. Spigot when testing Paper): a world is backed up there,
+#                     in a separate folder, and the backup is imported on the tested server.
+#   JAVA, OLD_JAVA, OTHER_JAVA   java binary for each of the three servers (default: java)
+#
 # A diamond block is placed in a world and looked for again after a restart and after an import,
 # so a world that was silently generated again from scratch is caught.
 set -euo pipefail
@@ -15,22 +20,26 @@ SERVER_JAR=$(realpath "$1")
 PLUGIN_JAR=$(realpath "$2")
 DIR=$3
 OLD_SERVER_JAR=${4:+$(realpath "$4")}
+OTHER_SERVER_JAR=${OTHER_SERVER_JAR:+$(realpath "$OTHER_SERVER_JAR")}
+JAVA=${JAVA:-java}
+OLD_JAVA=${OLD_JAVA:-$JAVA}
+OTHER_JAVA=${OTHER_JAVA:-$JAVA}
 START_TIMEOUT=${START_TIMEOUT:-600}
 STEP_TIMEOUT=${STEP_TIMEOUT:-120}
 
-mkdir -p "$DIR/plugins"
-cd "$DIR"
-cp "$PLUGIN_JAR" plugins/
-echo "eula=true" > eula.txt
-cat > server.properties <<'EOF'
-online-mode=false
-generate-structures=false
-spawn-protection=0
-view-distance=4
-simulation-distance=4
-EOF
+# prepare_dir <folder>: an empty server folder with the plugin installed
+prepare_dir() {
+  mkdir -p "$1/plugins"
+  cp "$PLUGIN_JAR" "$1/plugins/"
+  echo "eula=true" > "$1/eula.txt"
+  printf '%s\n' online-mode=false generate-structures=false spawn-protection=0 \
+    view-distance=4 simulation-distance=4 > "$1/server.properties"
+}
 
-LOG=console.log
+prepare_dir "$DIR"
+MAIN_DIR=$(realpath "$DIR")
+cd "$MAIN_DIR"
+LOG=$MAIN_DIR/console.log
 : > "$LOG"
 SERVER_PID=
 START_LINE=1
@@ -84,13 +93,14 @@ expect_since_start() {
   echo "  ok: $1"
 }
 
+# start_server <server.jar> <java>
 start_server() {
-  local jar=$1
-  echo "::group::Start $(basename "$jar")"
+  local jar=$1 java=$2
+  echo "::group::Start $(basename "$jar") with $("$java" -version 2>&1 | grep -i version | head -n 1)"
   rm -f console.in
   mkfifo console.in
   START_LINE=$(( $(lines) + 1 ))
-  java -Xms1G -Xmx2G -jar "$jar" --nogui < console.in >> "$LOG" 2>&1 &
+  "$java" -Xms1G -Xmx2G -jar "$jar" --nogui < console.in >> "$LOG" 2>&1 &
   SERVER_PID=$!
   exec 3> console.in
   wait_for "$START_LINE" "$START_TIMEOUT" 'Done \(' > /dev/null
@@ -192,9 +202,39 @@ expect_marker() {
   esac
 }
 
+# Anything thrown by the plugin, or API it could not find?
+check_plugin_errors() {
+  if plain_log | grep -nE 'at org\.cakedek\.|NoSuchMethodError|NoSuchFieldError|NoClassDefFoundError|AbstractMethodError|IncompatibleClassChangeError|Error occurred while enabling CoManyWorld|Could not load .*CoManyWorld'; then
+    fail "The plugin threw errors (see the lines above)"
+  fi
+  echo "Warnings from the plugin:"
+  plain_log | grep -F "[CoManyWorld]" | grep -E 'WARN|SEVERE|ERROR' || echo "  (none)"
+}
+
+if [ -n "$OTHER_SERVER_JAR" ]; then
+  ######## On another kind of server, in its own folder: a backup to import here ########
+  OTHER_DIR="$MAIN_DIR-other"
+  prepare_dir "$OTHER_DIR"
+  cd "$OTHER_DIR"
+  LOG=$OTHER_DIR/console.log
+  : > "$LOG"
+  start_server "$OTHER_SERVER_JAR" "$OTHER_JAVA"
+  expect_since_start "[CoManyWorld] Running on"
+  run "co-many create other" "World other created: many_world/other/world" "$PLUGIN_ERRORS"
+  set_marker many_world/other/world
+  run "co-many backup many_world/other/world" "backed up successfully" "$PLUGIN_ERRORS"
+  cp "$(find plugins/CoManyWorld/many_world_backup -name '*many_world_other_world*.zip' | head -n 1)" "$MAIN_DIR/other-server-backup.zip"
+  echo "Backup contents:"
+  unzip -Z1 "$MAIN_DIR/other-server-backup.zip" | grep -vE '/(region|entities|poi)/.' | head -n 20 | sed 's/^/  /' || true
+  stop_server
+  check_plugin_errors
+  cd "$MAIN_DIR"
+  LOG=$MAIN_DIR/console.log
+fi
+
 if [ -n "$OLD_SERVER_JAR" ]; then
   ######## On the older server: a world group that has to survive the upgrade ########
-  start_server "$OLD_SERVER_JAR"
+  start_server "$OLD_SERVER_JAR" "$OLD_JAVA"
   expect_since_start "[CoManyWorld] Running on"
   run "co-many create legacy -all" \
       "World legacy created: many_world/legacy/world, many_world/legacy/world_nether, many_world/legacy/world_the_end"
@@ -207,7 +247,7 @@ if [ -n "$OLD_SERVER_JAR" ]; then
 fi
 
 ######## 1st start: create, list, backup, import ########
-start_server "$SERVER_JAR"
+start_server "$SERVER_JAR" "$JAVA"
 expect_since_start "[CoManyWorld] Running on"
 if [ -n "$OLD_SERVER_JAR" ]; then
   expect_since_start "Loading world: many_world/legacy/world with environment: NORMAL"
@@ -215,9 +255,16 @@ if [ -n "$OLD_SERVER_JAR" ]; then
   expect_since_start "Loading world: many_world/legacy/world_the_end with environment: THE_END"
   expect_marker many_world/legacy/world passed
   expect_world many_world/legacy/world
+  mkdir -p plugins/CoManyWorld/import
   cp old-server-backup.zip plugins/CoManyWorld/import/oldbackup.zip
   run "co-many import oldbackup.zip" "World oldbackup has been successfully imported to many_world/oldbackup/world" "$PLUGIN_ERRORS"
   expect_marker many_world/oldbackup/world passed
+fi
+if [ -n "$OTHER_SERVER_JAR" ]; then
+  mkdir -p plugins/CoManyWorld/import
+  cp other-server-backup.zip plugins/CoManyWorld/import/otherbackup.zip
+  run "co-many import otherbackup.zip" "World otherbackup has been successfully imported to many_world/otherbackup/world" "$PLUGIN_ERRORS"
+  expect_marker many_world/otherbackup/world passed
 fi
 
 run "co-many about" "World folders >>>"
@@ -241,6 +288,7 @@ echo "Backup contents:"
 unzip -Z1 "$BACKUP" | grep -vE '/(region|entities|poi)/.' | head -n 40 | sed 's/^/  /' || true
 
 # Import the backup again under a new name; it must contain the marker block.
+mkdir -p plugins/CoManyWorld/import
 cp "$BACKUP" plugins/CoManyWorld/import/restored.zip
 run "co-many import restored.zip" "World restored has been successfully imported to many_world/restored/world" "$PLUGIN_ERRORS"
 expect_world many_world/restored/world
@@ -249,7 +297,7 @@ expect_marker many_world/restored/world passed
 stop_server
 
 ######## 2nd start: the worlds come back with their blocks, then delete and clear ########
-start_server "$SERVER_JAR"
+start_server "$SERVER_JAR" "$JAVA"
 expect_since_start "Loading world: many_world/smoke/world with environment: NORMAL"
 expect_since_start "Loading world: many_world/smoke/world_nether with environment: NETHER"
 expect_since_start "Loading world: many_world/smoke/world_the_end with environment: THE_END"
@@ -259,6 +307,9 @@ if [ -n "$OLD_SERVER_JAR" ]; then
   expect_since_start "Loading world: many_world/legacy/world with environment: NORMAL"
   expect_since_start "Loading world: many_world/oldbackup/world with environment: NORMAL"
 fi
+if [ -n "$OTHER_SERVER_JAR" ]; then
+  expect_since_start "Loading world: many_world/otherbackup/world with environment: NORMAL"
+fi
 if plain_log | tail -n "+$START_LINE" | grep -F -e "Skipping world" -e "Failed to load world" > /dev/null; then
   fail "Some worlds from config.yml did not load"
 fi
@@ -266,6 +317,9 @@ expect_marker many_world/smoke/world passed
 expect_marker many_world/restored/world passed
 if [ -n "$OLD_SERVER_JAR" ]; then
   expect_marker many_world/legacy/world passed
+fi
+if [ -n "$OTHER_SERVER_JAR" ]; then
+  expect_marker many_world/otherbackup/world passed
 fi
 
 run "co-many list" "many_world/restored/world"
@@ -292,11 +346,6 @@ show_worlds
 
 stop_server
 
-######## Anything thrown by the plugin, or API it could not find? ########
-if plain_log | grep -nE 'at org\.cakedek\.|NoSuchMethodError|NoSuchFieldError|NoClassDefFoundError|AbstractMethodError|IncompatibleClassChangeError|Error occurred while enabling CoManyWorld|Could not load .*CoManyWorld'; then
-  fail "The plugin threw errors (see the lines above)"
-fi
-echo "Warnings from the plugin:"
-plain_log | grep -F "[CoManyWorld]" | grep -E 'WARN|SEVERE|ERROR' || echo "  (none)"
+check_plugin_errors
 
 echo "All checks passed."

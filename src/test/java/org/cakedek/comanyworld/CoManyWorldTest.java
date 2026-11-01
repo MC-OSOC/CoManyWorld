@@ -498,6 +498,51 @@ class CoManyWorldTest extends TestBase {
     }
 
     @Test
+    void zipThatUnpacksTooBigIsStopped() throws Exception {
+        plugin.getConfig().set("import-max-size-mb", 1);
+        // 3 MB of zeros: a tiny zip that unpacks to more than the limit (like a zip bomb)
+        File zip = new File(plugin.getDataFolder(), "import/huge.zip");
+        try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(zip.toPath()))) {
+            zos.putNextEntry(new ZipEntry("huge/level.dat"));
+            zos.write("x".getBytes());
+            zos.closeEntry();
+            zos.putNextEntry(new ZipEntry("huge/region/r.0.0.mca"));
+            zos.write(new byte[3 * 1024 * 1024]);
+            zos.closeEntry();
+        }
+        assertTrue(zip.length() < 100 * 1024, "the zip itself is small: " + zip.length());
+
+        run("co-many import huge.zip");
+        String out = awaitOutput("Failed to import world");
+        assertTrue(out.contains("import-max-size-mb"), out);
+        assertNull(Bukkit.getWorld("many_world/huge/world"));
+        assertFalse(folder("many_world/huge").exists());
+        File[] cache = new File(plugin.getDataFolder(), "import/cache").listFiles();
+        assertTrue(cache == null || cache.length == 0, "unpacked files must be removed: " + Arrays.toString(cache));
+
+        // Under the limit it works
+        plugin.getConfig().set("import-max-size-mb", 10);
+        run("co-many import huge.zip");
+        awaitOutput("successfully imported");
+        assertNotNull(Bukkit.getWorld("many_world/huge/world"));
+    }
+
+    @Test
+    void folderTooBigIsNotCopied() throws Exception {
+        plugin.getConfig().set("import-max-size-mb", 1);
+        Path source = plugin.getDataFolder().toPath().resolve("import/BigMap");
+        Files.createDirectories(source.resolve("region"));
+        Files.writeString(source.resolve("level.dat"), "big");
+        Files.write(source.resolve("region/r.0.0.mca"), new byte[2 * 1024 * 1024]);
+
+        run("co-many import BigMap");
+        String out = awaitOutput("too big to import");
+        assertTrue(out.contains("2 MB"), out);
+        assertFalse(folder("many_world/bigmap").exists());
+        assertNull(Bukkit.getWorld("many_world/bigmap/world"));
+    }
+
+    @Test
     void importZipWithoutLevelDatFails() throws Exception {
         File zip = new File(plugin.getDataFolder(), "import/notaworld.zip");
         try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(zip.toPath()))) {
