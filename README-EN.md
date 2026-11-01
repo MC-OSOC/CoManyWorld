@@ -27,7 +27,7 @@ Requires JDK 21 and Maven.
 mvn package
 ```
 The jar is written to `target/CoManyWorld-<version>.jar` and works on both Spigot and Paper.
-To check that the code also compiles against the Paper API, run `mvn package -Ppaper`.
+To check that the code also compiles against the Paper API and run the tests (MockBukkit), use `mvn package -Ppaper`.
 
 ## Commands
 

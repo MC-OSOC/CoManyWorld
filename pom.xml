@@ -57,6 +57,10 @@
       <activation>
         <activeByDefault>true</activeByDefault>
       </activation>
+      <properties>
+        <!-- The tests use MockBukkit, which needs the Paper API: run them with mvn test -Ppaper -->
+        <maven.test.skip>true</maven.test.skip>
+      </properties>
       <repositories>
         <repository>
           <id>spigotmc-repo</id>
@@ -75,7 +79,7 @@
 
     <!--
       mvn package -Ppaper
-      Builds against the Paper API instead, to check the code also compiles there.
+      Builds against the Paper API instead and runs the tests (MockBukkit).
       It produces the same plugin; you do not need a separate jar for Paper.
     -->
     <profile>
@@ -93,7 +97,28 @@
           <version>${paper.api.version}</version>
           <scope>provided</scope>
         </dependency>
+        <dependency>
+          <groupId>org.mockbukkit.mockbukkit</groupId>
+          <artifactId>mockbukkit-v1.21</artifactId>
+          <version>4.116.3</version>
+          <scope>test</scope>
+        </dependency>
+        <dependency>
+          <groupId>org.junit.jupiter</groupId>
+          <artifactId>junit-jupiter</artifactId>
+          <version>6.0.3</version>
+          <scope>test</scope>
+        </dependency>
       </dependencies>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <version>3.5.4</version>
+          </plugin>
+        </plugins>
+      </build>
     </profile>
   </profiles>
 </project>
