@@ -1,6 +1,9 @@
-# Starts a real Paper and Spigot server on GitHub's runner with the plugin installed,
+# Starts real Paper and Spigot servers on GitHub's runner with the plugin installed,
 # types the plugin's commands into the server console and checks the answers
 # (create, list, backup, import, restart, delete, clear). See .github/scripts/server-smoke-test.sh
+#
+# The "upgrade" job first creates worlds on Paper 1.21.11, then checks they are still there,
+# with the same blocks, on the new version.
 #
 # Runs on every push that changes the plugin, or by hand:
 #   Actions -> Server test -> Run workflow -> Minecraft version (e.g. 26.3 or 1.21.11)
@@ -13,6 +16,7 @@ on:
       - 'pom.xml'
       - '.github/workflows/server-test.yml'
       - '.github/scripts/server-smoke-test.sh'
+      - '.github/scripts/download-paper.sh'
   workflow_dispatch:
     inputs:
       minecraft_version:
@@ -30,17 +34,21 @@ concurrency:
 
 jobs:
   server-test:
-    name: ${{ matrix.server }} ${{ matrix.version }}
+    name: ${{ matrix.server }} ${{ inputs.minecraft_version || '26.3' }}${{ matrix.upgrade_from && format(' (upgrade from {0})', matrix.upgrade_from) || '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        server: [paper, spigot]
-        version: ["${{ inputs.minecraft_version || '26.3' }}"]
+        include:
+          - server: paper
+          - server: spigot
+          - server: paper
+            upgrade_from: '1.21.11'
     env:
       SERVER: ${{ matrix.server }}
-      MC_VERSION: ${{ matrix.version }}
+      MC_VERSION: ${{ inputs.minecraft_version || '26.3' }}
+      UPGRADE_FROM: ${{ matrix.upgrade_from }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -57,19 +65,14 @@ jobs:
       - name: Download Paper
         if: matrix.server == 'paper'
         run: |
-          mkdir -p server
-          UA="CoManyWorld-server-test (https://github.com/$GITHUB_REPOSITORY)"
-          curl -fsSL -A "$UA" -o builds.json \
-            "https://fill.papermc.io/v3/projects/paper/versions/$MC_VERSION/builds"
-          # Newest build of any channel: 26.x builds may still be marked BETA.
-          IFS=$'\t' read -r BUILD CHANNEL URL SHA256 < <(jq -r '
-            sort_by(.id) | last
-            | [.id, .channel, .downloads["server:default"].url, .downloads["server:default"].checksums.sha256]
-            | @tsv' builds.json)
-          echo "Paper $MC_VERSION build $BUILD ($CHANNEL)"
-          echo "SERVER_BUILD=Paper $MC_VERSION build $BUILD ($CHANNEL)" >> "$GITHUB_ENV"
-          curl -fsSL -A "$UA" -o server/server.jar "$URL"
-          echo "$SHA256  server/server.jar" | sha256sum -c -
+          BUILD=$(bash .github/scripts/download-paper.sh "$MC_VERSION" server/server.jar)
+          echo "$BUILD"
+          if [ -n "$UPGRADE_FROM" ]; then
+            OLD=$(bash .github/scripts/download-paper.sh "$UPGRADE_FROM" server/old-server.jar)
+            echo "$OLD"
+            BUILD="$OLD -> $BUILD"
+          fi
+          echo "SERVER_BUILD=$BUILD" >> "$GITHUB_ENV"
 
       - name: Build Spigot with BuildTools
         if: matrix.server == 'spigot'
@@ -88,16 +91,20 @@ jobs:
       - name: Run the plugin on the server
         run: |
           PLUGIN_JAR=$(ls target/CoManyWorld-*.jar)
-          bash .github/scripts/server-smoke-test.sh server/server.jar "$PLUGIN_JAR" run
+          ARGS=(server/server.jar "$PLUGIN_JAR" run)
+          if [ -n "$UPGRADE_FROM" ]; then
+            ARGS+=(server/old-server.jar)
+          fi
+          bash .github/scripts/server-smoke-test.sh "${ARGS[@]}"
 
       - name: Summary
         if: always()
         run: |
           if [ -f run/console.log ]; then
-            RUNNING_ON=$(grep -a -o 'Running on .*' run/console.log | head -n 1 || true)
+            RUNNING_ON=$(grep -a -o 'Running on .*' run/console.log | tail -n 1 || true)
           fi
           {
-            echo "### $SERVER $MC_VERSION: ${{ job.status }}"
+            echo "### $SERVER $MC_VERSION${UPGRADE_FROM:+ (upgrade from $UPGRADE_FROM)}: ${{ job.status }}"
             echo "- Server: ${SERVER_BUILD:-not downloaded}"
             echo "- Plugin says: ${RUNNING_ON:-(plugin did not start)}"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -106,7 +113,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: server-logs-${{ matrix.server }}-${{ matrix.version }}
+          name: server-logs-${{ matrix.server }}${{ matrix.upgrade_from && '-upgrade' || '' }}-${{ env.MC_VERSION }}
           path: |
             run/console.log
             run/logs/
