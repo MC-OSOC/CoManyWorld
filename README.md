@@ -35,7 +35,7 @@ mvn package
 
 #### สร้างโลกใหม่
 `/co-many create <worldName> [-11|-12|-13|-all]`
-- `-11` : โลกปกติ (ค่าเริ่มต้น)
+- `-11` : โลกปกติ (ค่าเริ่มต้น ถ้าไม่ใส่ประเภท จะใช้ `default-world-type` ใน `config.yml`)
 - `-12` : โลกนรก (Nether)
 - `-13` : โลก The End
 - `-all`: สร้างโลกทั้งหมด
@@ -67,6 +67,10 @@ mvn package
      ├─world_nether/
      └─world_the_end/
   ```
+- **Paper 26.x** เก็บทุกโลกไว้ในโฟลเดอร์โลกหลักแทน: `world/dimensions/minecraft/many_world/custom_world/world`
+  (ชื่อโลกในเกมยังเป็น `many_world/custom_world/world` เหมือนเดิม ดูตำแหน่งจริงได้ด้วย `/co-many about`)
+- อัปเกรดจาก Paper 1.21 เป็น 26.x: โลกเดิมใน `many_world/` จะถูก Paper ย้ายไปไว้ใน `world/dimensions/...` ให้เองตอนเปิดเซิร์ฟเวอร์ครั้งแรก ปลั๊กอินหาเจอทั้งสองที่
+  **สำรองโฟลเดอร์เซิร์ฟเวอร์ทั้งหมดก่อนอัปเกรดเสมอ**
 
 ## Permissions
 
@@ -100,7 +104,11 @@ delete_worlds: []
 
 ## การนำเข้าโลก
 
-นำโฟลเดอร์โลกหรือไฟล์ ZIP ไปไว้ใน `plugins/CoManyWorld/import` แล้วใช้ `/co-many import <ชื่อไฟล์>` ปลั๊กอินจะค้นหาไฟล์ `level.dat` เพื่อระบุตำแหน่งรากของโลก (ไฟล์ `session.lock` และ `uid.dat` จะไม่ถูกคัดลอก) การคัดลอกทำในพื้นหลัง เซิร์ฟเวอร์จะไม่ค้าง
+นำโฟลเดอร์โลกหรือไฟล์ ZIP ไปไว้ใน `plugins/CoManyWorld/import` แล้วใช้ `/co-many import <ชื่อไฟล์>` การคัดลอกทำในพื้นหลัง เซิร์ฟเวอร์จะไม่ค้าง
+- ปลั๊กอินจะหาโฟลเดอร์ที่มี `level.dat` (โลก single player, Spigot, Paper 1.21) หรือโฟลเดอร์โลกของ Paper 26.x (มี `data/paper/level_overrides.dat`)
+- โลกของ Paper 26.x (เช่นไฟล์ backup ที่ทำบน Paper 26.x) import ได้บน Paper 26.x เท่านั้น
+- ไฟล์ `session.lock`, `uid.dat` และ `data/paper/metadata.dat` จะไม่ถูกคัดลอก (ไม่งั้นเซิร์ฟเวอร์จะมองว่าเป็นโลกซ้ำ)
+- symbolic link จะไม่ถูกคัดลอก และถ้า ZIP แตกไฟล์แล้วใหญ่เกินพื้นที่ว่างในดิสก์ จะหยุดกลางทาง
 
 ## การสำรองข้อมูลโลก
 

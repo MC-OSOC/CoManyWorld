@@ -5,6 +5,7 @@ import org.bukkit.World;
 import org.bukkit.WorldCreator;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.cakedek.comanyworld.cm.WorldClear;
 
 import java.io.File;
 import java.util.List;
@@ -50,6 +51,11 @@ public class CoManyWorld extends JavaPlugin {
 
         // Load worlds on startup
         loadWorldsOnStartup();
+    }
+
+    @Override
+    public void onDisable() {
+        WorldClear.reset();
     }
 
     public static CoManyWorld getInstance() {

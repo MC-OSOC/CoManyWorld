@@ -79,6 +79,12 @@ public class WorldClear {
             folders.put(worldName, worldFolders);
         }
 
+        if (folders.isEmpty()) {
+            // Nothing to delete (all skipped): no need for a background task.
+            finish(sender, new LinkedHashMap<>(), keep, deleteWorldsConfig, deleteWorldsFile);
+            return;
+        }
+
         // Asked here: the server's world list must only be read on the main thread.
         List<File> roots = WorldFolders.managedRoots();
         running = true;
@@ -94,24 +100,34 @@ public class WorldClear {
             }
             Bukkit.getScheduler().runTask(plugin, () -> {
                 running = false;
-                for (Map.Entry<String, Boolean> result : results.entrySet()) {
-                    if (result.getValue()) {
-                        sender.sendMessage("Deleted world folder: " + result.getKey());
-                    } else {
-                        sender.sendMessage("Failed to delete world folder: " + result.getKey());
-                        keep.add(result.getKey());
-                    }
-                }
-                // Keep anything that could not be deleted in delete_worlds.yml
-                deleteWorldsConfig.set("delete_worlds", keep);
-                try {
-                    deleteWorldsConfig.save(deleteWorldsFile);
-                } catch (IOException e) {
-                    sender.sendMessage("Failed to update delete_worlds.yml");
-                    plugin.getLogger().log(Level.SEVERE, "Failed to update delete_worlds.yml", e);
-                }
+                finish(sender, results, keep, deleteWorldsConfig, deleteWorldsFile);
             });
         });
+    }
+
+    /** Called when the plugin is disabled, so a clear that was cut off doesn't block the next one. */
+    public static void reset() {
+        running = false;
+    }
+
+    private static void finish(CommandSender sender, Map<String, Boolean> results, List<String> keep,
+                               FileConfiguration deleteWorldsConfig, File deleteWorldsFile) {
+        for (Map.Entry<String, Boolean> result : results.entrySet()) {
+            if (result.getValue()) {
+                sender.sendMessage("Deleted world folder: " + result.getKey());
+            } else {
+                sender.sendMessage("Failed to delete world folder: " + result.getKey());
+                keep.add(result.getKey());
+            }
+        }
+        // Keep anything that could not be deleted in delete_worlds.yml
+        deleteWorldsConfig.set("delete_worlds", keep);
+        try {
+            deleteWorldsConfig.save(deleteWorldsFile);
+        } catch (IOException e) {
+            sender.sendMessage("Failed to update delete_worlds.yml");
+            CoManyWorld.getInstance().getLogger().log(Level.SEVERE, "Failed to update delete_worlds.yml", e);
+        }
     }
 
     private static boolean deleteRecursively(Path root) {
