@@ -27,3 +27,4 @@ replay_pid*
 # Maven build output
 target/
 dependency-reduced-pom.xml
+release/
