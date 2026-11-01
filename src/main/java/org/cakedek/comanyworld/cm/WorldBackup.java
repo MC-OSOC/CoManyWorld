@@ -8,160 +8,124 @@ import org.bukkit.boss.BarStyle;
 import org.bukkit.boss.BossBar;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
-import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.scheduler.BukkitTask;
 import org.cakedek.comanyworld.CoManyWorld;
 
-import java.io.*;
+import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.file.*;
 import java.text.SimpleDateFormat;
-import java.util.Date;
+import java.util.*;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.logging.Level;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 public class WorldBackup {
 
+    private static final Set<String> RUNNING = new HashSet<>();
+
+    /**
+     * Saves the world, then zips its folder in the background into
+     * plugins/CoManyWorld/many_world_backup/&lt;timestamp&gt;-&lt;world&gt;.zip
+     */
     public static void backupWorld(CommandSender sender, String worldName) {
         World world = Bukkit.getWorld(worldName);
         if (world == null) {
             sender.sendMessage(ChatColor.RED + "World not found: " + worldName);
             return;
         }
-
-        String backupFolderPath = CoManyWorld.getInstance().getDataFolder().getParent() + "co-many-world/many_world_backup";
-        File backupFolder = new File(backupFolderPath);
-        if (!backupFolder.exists()) {
-            backupFolder.mkdirs();
+        String name = world.getName();
+        if (!RUNNING.add(name)) {
+            sender.sendMessage(ChatColor.RED + "A backup of " + name + " is already running.");
+            return;
         }
 
-        SimpleDateFormat dateFormat = new SimpleDateFormat("yyyyMMdd-HHmmss");
-        String timestamp = dateFormat.format(new Date());
-        String backupFileName = timestamp + "-" + worldName + "-" + System.currentTimeMillis() + ".zip";
+        CoManyWorld plugin = CoManyWorld.getInstance();
+        Path source = world.getWorldFolder().toPath();
+        Path backupFolder = plugin.getDataFolder().toPath().resolve("many_world_backup");
+        String timestamp = new SimpleDateFormat("yyyyMMdd-HHmmss").format(new Date());
+        Path backupFile = backupFolder.resolve(timestamp + "-" + name.replace('/', '_') + ".zip");
+        // Entries are stored as "<folder name>/..." so the zip can be imported again with /co-many import.
+        String rootEntry = source.getFileName().toString();
 
-        // Create a subfolder for this backup
-        File backupSubFolder = new File(backupFolder, timestamp + "-" + worldName);
-        if (!backupSubFolder.exists()) {
-            backupSubFolder.mkdirs();
-        }
-        File tempFolder = new File(backupFolder, "temp");
-        if (!tempFolder.exists()) {
-            tempFolder.mkdirs();
-        }
+        // Write everything to disk first and pause autosave so the files don't change while zipping.
+        world.save();
+        boolean autoSave = world.isAutoSave();
+        world.setAutoSave(false);
 
-        File backupFile = new File(backupSubFolder, backupFileName);
-        BossBar progressBar = Bukkit.createBossBar(ChatColor.GREEN + "Backing up world: " + worldName, BarColor.BLUE, BarStyle.SOLID);
+        BossBar progressBar = Bukkit.createBossBar(ChatColor.GREEN + "Backing up world: " + name, BarColor.BLUE, BarStyle.SOLID);
+        progressBar.setProgress(0.0);
         if (sender instanceof Player) {
             progressBar.addPlayer((Player) sender);
         }
 
-        new BukkitRunnable() {
-            @Override
-            public void run() {
-                try {
-                    // Step 1: Copy world files to temp folder
-                    copyWorldToTemp(world.getWorldFolder(), tempFolder, progressBar, 0.0, 0.5);
+        AtomicLong done = new AtomicLong();
+        AtomicLong total = new AtomicLong(1);
+        // The boss bar is only touched from the main thread.
+        BukkitTask progressTask = Bukkit.getScheduler().runTaskTimer(plugin,
+                () -> progressBar.setProgress(Math.min(1.0, (double) done.get() / Math.max(1, total.get()))), 10L, 10L);
 
-                    // Step 2: Create zip from temp folder
-                    zipWorld(tempFolder, backupFile, progressBar, 0.5, 1.0);
-
-                    sender.sendMessage(ChatColor.GREEN + "World " + worldName + " backed up successfully.");
-                } catch (IOException e) {
-                    sender.sendMessage(ChatColor.RED + "Failed to backup world: " + e.getMessage());
-                    e.printStackTrace();
-                } finally {
-                    // Clean up temp folder
-                    deleteFolder(tempFolder);
-                    progressBar.removeAll();
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            String error = null;
+            try {
+                zipFolder(source, backupFile, rootEntry, done, total);
+            } catch (IOException | RuntimeException e) {
+                error = e.getMessage();
+                plugin.getLogger().log(Level.SEVERE, "Failed to backup world " + name, e);
+            }
+            String finalError = error;
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                progressTask.cancel();
+                progressBar.removeAll();
+                World stillLoaded = Bukkit.getWorld(name);
+                if (stillLoaded != null) {
+                    stillLoaded.setAutoSave(autoSave);
                 }
-            }
-        }.runTaskAsynchronously(CoManyWorld.getInstance());
-    }
-
-    private static void copyWorldToTemp(File sourceFolder, File tempFolder, BossBar progressBar, double startProgress, double endProgress) throws IOException {
-        long totalSize = getFolderSize(sourceFolder);
-        long copiedSize = 0;
-
-        for (File sourceFile : sourceFolder.listFiles()) {
-            if (sourceFile.getName().equals("session.lock")) {
-                continue; // Skip session.lock file
-            }
-
-            File destFile = new File(tempFolder, sourceFile.getName());
-            if (sourceFile.isDirectory()) {
-                destFile.mkdirs();
-                copyWorldToTemp(sourceFile, destFile, progressBar, startProgress, endProgress);
-            } else {
-                try {
-                    Files.copy(sourceFile.toPath(), destFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
-                } catch (IOException e) {
-                    System.out.println("Failed to copy file: " + sourceFile.getName() + ". Skipping...");
-                    continue;
-                }
-                copiedSize += sourceFile.length();
-                updateProgressBar(progressBar, copiedSize, totalSize, startProgress, endProgress);
-            }
-        }
-    }
-
-    private static void zipWorld(File tempFolder, File zipFile, BossBar progressBar, double startProgress, double endProgress) throws IOException {
-        // Ensure the parent directory of the zip file exists
-        zipFile.getParentFile().mkdirs();
-
-        long totalSize = getFolderSize(tempFolder);
-        long zippedSize = 0;
-
-        try (FileOutputStream fos = new FileOutputStream(zipFile);
-             ZipOutputStream zos = new ZipOutputStream(fos)) {
-
-            zipFolder(tempFolder, tempFolder.getName(), zos, progressBar, totalSize, zippedSize, startProgress, endProgress);
-        }
-    }
-
-    private static void zipFolder(File folder, String parentFolder, ZipOutputStream zos, BossBar progressBar,
-                                  long totalSize, long zippedSize, double startProgress, double endProgress) throws IOException {
-        for (File file : folder.listFiles()) {
-            if (file.isDirectory()) {
-                zipFolder(file, parentFolder + "/" + file.getName(), zos, progressBar, totalSize, zippedSize, startProgress, endProgress);
-                continue;
-            }
-
-            zos.putNextEntry(new ZipEntry(parentFolder + "/" + file.getName()));
-            Files.copy(file.toPath(), zos);
-            zippedSize += file.length();
-            updateProgressBar(progressBar, zippedSize, totalSize, startProgress, endProgress);
-            zos.closeEntry();
-        }
-    }
-
-    private static void updateProgressBar(BossBar progressBar, long currentSize, long totalSize, double startProgress, double endProgress) {
-        double progress = startProgress + (endProgress - startProgress) * ((double) currentSize / totalSize);
-        progressBar.setProgress(Math.min(1.0, Math.max(0.0, progress)));
-    }
-
-
-
-    private static long getFolderSize(File folder) {
-        long size = 0;
-        for (File file : folder.listFiles()) {
-            if (file.isDirectory()) {
-                size += getFolderSize(file);
-            } else {
-                size += file.length();
-            }
-        }
-        return size;
-    }
-
-    private static void deleteFolder(File folder) {
-        File[] files = folder.listFiles();
-        if (files != null) {
-            for (File file : files) {
-                if (file.isDirectory()) {
-                    deleteFolder(file);
+                RUNNING.remove(name);
+                if (finalError == null) {
+                    sender.sendMessage(ChatColor.GREEN + "World " + name + " backed up successfully: "
+                            + ChatColor.WHITE + "many_world_backup/" + backupFile.getFileName());
                 } else {
-                    file.delete();
+                    sender.sendMessage(ChatColor.RED + "Failed to backup world: " + finalError);
                 }
-            }
+            });
+        });
+    }
+
+    private static void zipFolder(Path source, Path zipFile, String rootEntry, AtomicLong done, AtomicLong total) throws IOException {
+        List<Path> files;
+        try (Stream<Path> walk = Files.walk(source)) {
+            files = walk.filter(Files::isRegularFile)
+                    .filter(path -> !path.getFileName().toString().equals("session.lock")) // locked by the server
+                    .collect(Collectors.toList());
         }
-        folder.delete();
+        long size = 0;
+        for (Path file : files) {
+            size += Files.size(file);
+        }
+        total.set(size);
+
+        Files.createDirectories(zipFile.getParent());
+        Path temp = zipFile.resolveSibling(zipFile.getFileName() + ".part");
+        try (OutputStream out = Files.newOutputStream(temp);
+             ZipOutputStream zos = new ZipOutputStream(out)) {
+            for (Path file : files) {
+                String relative = source.relativize(file).toString().replace('\\', '/');
+                zos.putNextEntry(new ZipEntry(rootEntry + "/" + relative));
+                try {
+                    done.addAndGet(Files.copy(file, zos));
+                } catch (IOException e) {
+                    CoManyWorld.getInstance().getLogger().warning("Failed to copy file: " + file + ". Skipping...");
+                }
+                zos.closeEntry();
+            }
+        } catch (IOException | RuntimeException e) {
+            Files.deleteIfExists(temp);
+            throw e;
+        }
+        Files.move(temp, zipFile, StandardCopyOption.REPLACE_EXISTING);
     }
 }

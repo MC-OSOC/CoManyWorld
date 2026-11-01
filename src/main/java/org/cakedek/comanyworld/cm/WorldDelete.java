@@ -1,53 +1,93 @@
 package org.cakedek.comanyworld.cm;
 
 import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
 import org.bukkit.World;
 import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
-import org.bukkit.event.Listener;
+import org.bukkit.entity.Player;
 import org.cakedek.comanyworld.CoManyWorld;
+import org.cakedek.comanyworld.WorldNames;
 
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.stream.Collectors;
+import java.util.Locale;
+import java.util.Set;
+import java.util.logging.Level;
 
-public class WorldDelete implements Listener {
+public class WorldDelete {
 
+    /**
+     * Unloads the world(s) and moves them to the trash (delete_worlds.yml).
+     * Nothing is removed from disk until /co-many clear confirm.
+     * Only worlds inside many_world/ can be deleted, never the server's own worlds.
+     */
     public static void deleteWorlds(CommandSender sender, String worldPath) {
-        List<String> worldsToDelete = new ArrayList<>();
+        if (!WorldNames.isManaged(worldPath) || worldPath.contains("..") || worldPath.equalsIgnoreCase(WorldNames.ROOT)) {
+            sender.sendMessage(ChatColor.RED + "Only worlds created or imported by CoManyWorld (" + WorldNames.ROOT
+                    + "<name>/...) can be deleted.");
+            return;
+        }
 
-        // Check if it's a directory (potential parent world)
+        List<String> configWorlds = CoManyWorld.getInstance().getConfig().getStringList("worlds");
+        Set<String> worldsToDelete = new LinkedHashSet<>();
+
         if (worldPath.endsWith("/")) {
-            worldsToDelete = getWorldsInDirectory(worldPath);
+            // A whole group, e.g. many_world/foo/
+            String prefix = worldPath.toLowerCase(Locale.ROOT);
+            for (World world : Bukkit.getWorlds()) {
+                if (world.getName().toLowerCase(Locale.ROOT).startsWith(prefix)) {
+                    worldsToDelete.add(world.getName());
+                }
+            }
+            for (String name : configWorlds) {
+                if (name.toLowerCase(Locale.ROOT).startsWith(prefix)) {
+                    worldsToDelete.add(name);
+                }
+            }
         } else {
             World world = Bukkit.getWorld(worldPath);
             if (world != null) {
-                worldsToDelete.add(worldPath);
+                worldsToDelete.add(world.getName());
             } else {
-                sender.sendMessage("World not found: " + worldPath);
-                return;
+                configWorlds.stream().filter(name -> name.equalsIgnoreCase(worldPath)).forEach(worldsToDelete::add);
             }
         }
 
         if (worldsToDelete.isEmpty()) {
-            sender.sendMessage("No worlds found to delete in: " + worldPath);
+            sender.sendMessage("World not found: " + worldPath);
             return;
         }
 
-        // Unload worlds
+        // Unload worlds. Players are moved out first, otherwise the server refuses to unload.
+        World fallback = Bukkit.getWorlds().get(0);
+        List<String> failed = new ArrayList<>();
         for (String worldName : worldsToDelete) {
             World world = Bukkit.getWorld(worldName);
-            if (world != null) {
-                Bukkit.unloadWorld(world, false);
+            if (world == null) {
+                continue;
             }
+            for (Player player : world.getPlayers()) {
+                player.teleport(fallback.getSpawnLocation());
+                player.sendMessage(ChatColor.YELLOW + "The world you were in is being deleted.");
+            }
+            // Save on unload: the world goes to the trash, it can still be restored until it is cleared.
+            if (!Bukkit.unloadWorld(world, true)) {
+                failed.add(worldName);
+            }
+        }
+        if (!failed.isEmpty()) {
+            sender.sendMessage(ChatColor.RED + "Could not unload " + String.join(", ", failed)
+                    + ". Nothing was deleted.");
+            return;
         }
 
         // Remove from config.yml
-        List<String> configWorlds = CoManyWorld.getInstance().getConfig().getStringList("worlds");
-        configWorlds.removeAll(worldsToDelete);
+        configWorlds.removeIf(name -> worldsToDelete.stream().anyMatch(name::equalsIgnoreCase));
         CoManyWorld.getInstance().getConfig().set("worlds", configWorlds);
         CoManyWorld.getInstance().saveConfig();
 
@@ -55,12 +95,16 @@ public class WorldDelete implements Listener {
         File deleteWorldsFile = new File(CoManyWorld.getInstance().getDataFolder(), "delete_worlds.yml");
         FileConfiguration deleteWorldsConfig = YamlConfiguration.loadConfiguration(deleteWorldsFile);
         List<String> deleteWorlds = deleteWorldsConfig.getStringList("delete_worlds");
-        deleteWorlds.addAll(worldsToDelete);
+        for (String world : worldsToDelete) {
+            if (!deleteWorlds.contains(world)) {
+                deleteWorlds.add(world);
+            }
+        }
         deleteWorldsConfig.set("delete_worlds", deleteWorlds);
         try {
             deleteWorldsConfig.save(deleteWorldsFile);
         } catch (IOException e) {
-            e.printStackTrace();
+            CoManyWorld.getInstance().getLogger().log(Level.SEVERE, "Error saving delete_worlds.yml", e);
             sender.sendMessage("Error saving delete_worlds.yml");
             return;
         }
@@ -69,13 +113,6 @@ public class WorldDelete implements Listener {
         for (String world : worldsToDelete) {
             sender.sendMessage("- " + world);
         }
-        sender.sendMessage("Use /co-many-clear to permanently delete these worlds.");
-    }
-
-    private static List<String> getWorldsInDirectory(String directoryPath) {
-        List<String> worlds = CoManyWorld.getInstance().getConfig().getStringList("worlds");
-        return worlds.stream()
-                .filter(world -> world.startsWith(directoryPath))
-                .collect(Collectors.toList());
+        sender.sendMessage("Use /co-many clear confirm to permanently delete these worlds.");
     }
 }

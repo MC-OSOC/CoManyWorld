@@ -1,21 +1,32 @@
 package org.cakedek.comanyworld.cm;
 
-import net.md_5.bungee.api.ChatColor;
 import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.cakedek.comanyworld.CoManyWorld;
+import org.cakedek.comanyworld.WorldNames;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.*;
+import java.util.logging.Level;
+import java.util.stream.Stream;
 
-@SuppressWarnings({"ResultOfMethodCallIgnored", "CallToPrintStackTrace"})
 public class WorldClear {
 
-    public static void clearDeletedWorlds(CommandSender sender) {
-        File deleteWorldsFile = new File(CoManyWorld.getInstance().getDataFolder(), "delete_worlds.yml");
+    private static boolean running = false;
+
+    /**
+     * Without confirm: lists the worlds in the trash.
+     * With confirm: permanently deletes exactly those world folders (in the background).
+     */
+    public static void clearDeletedWorlds(CommandSender sender, boolean confirm) {
+        CoManyWorld plugin = CoManyWorld.getInstance();
+        File deleteWorldsFile = new File(plugin.getDataFolder(), "delete_worlds.yml");
         FileConfiguration deleteWorldsConfig = YamlConfiguration.loadConfiguration(deleteWorldsFile);
         List<String> deleteWorlds = deleteWorldsConfig.getStringList("delete_worlds");
 
@@ -24,66 +35,98 @@ public class WorldClear {
             return;
         }
 
-        Map<String, List<String>> worldGroups = groupWorlds(deleteWorlds);
-
-        sender.sendMessage(   ChatColor.GOLD + "=== Many World > Clear \n" + ChatColor.RESET +
-                                "The following worlds will be permanently deleted:");
-        for (Map.Entry<String, List<String>> entry : worldGroups.entrySet()) {
-            sender.sendMessage("- " + entry.getKey() + " (including: " + String.join(", ", entry.getValue()) + ")");
+        sender.sendMessage(ChatColor.GOLD + "=== Many World > Clear \n" + ChatColor.RESET +
+                (confirm ? "Permanently deleting:" : "The following worlds will be permanently deleted:"));
+        for (String world : deleteWorlds) {
+            sender.sendMessage("- " + world);
+        }
+        if (!confirm) {
+            sender.sendMessage(ChatColor.YELLOW + "Run " + ChatColor.WHITE + "/co-many clear confirm"
+                    + ChatColor.YELLOW + " to delete them. This cannot be undone.");
+            return;
+        }
+        if (running) {
+            sender.sendMessage(ChatColor.RED + "A clear is already running.");
+            return;
         }
 
-        // Here you would typically wait for user input.
-        // For the sake of this example, let's assume the confirmation is received.
-        // In a real implementation, you'd need to handle this asynchronously.
-
-        // Simulating user confirmation
-
-        for (String mainFolder : worldGroups.keySet()) {
-            File worldFolder = new File(Bukkit.getWorldContainer(), mainFolder);
-            if (deleteWorldFolder(worldFolder)) {
-                sender.sendMessage("Deleted world folder: " + mainFolder);
+        // Decide on the main thread what is safe to delete.
+        Map<String, File> folders = new LinkedHashMap<>();
+        List<String> keep = new ArrayList<>();
+        for (String worldName : deleteWorlds) {
+            File folder = WorldNames.managedFolder(worldName);
+            if (folder == null) {
+                sender.sendMessage(ChatColor.RED + "Skipped " + worldName + ": not inside " + WorldNames.ROOT);
+                keep.add(worldName);
+            } else if (Bukkit.getWorld(worldName) != null) {
+                sender.sendMessage(ChatColor.RED + "Skipped " + worldName + ": the world is loaded again.");
+                keep.add(worldName);
             } else {
-                sender.sendMessage("Failed to delete world folder: " + mainFolder);
+                folders.put(worldName, folder);
             }
         }
 
-        // Clear the delete_worlds.yml file
-        deleteWorldsConfig.set("delete_worlds", null);
-        try {
-            deleteWorldsConfig.save(deleteWorldsFile);
-        } catch (IOException e) {
-            sender.sendMessage("Failed to update delete_worlds.yml");
-            e.printStackTrace();
-        }
-    }
-
-    private static Map<String, List<String>> groupWorlds(List<String> worlds) {
-        Map<String, List<String>> groups = new HashMap<>();
-        for (String world : worlds) {
-            String[] parts = world.split("/");
-            if (parts.length > 2) {
-                String mainFolder = parts[0] + "/" + parts[1];
-                groups.computeIfAbsent(mainFolder, k -> new ArrayList<>()).add(world);
-            } else {
-                groups.put(world, Collections.singletonList(world));
+        running = true;
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            Map<String, Boolean> results = new LinkedHashMap<>();
+            for (Map.Entry<String, File> entry : folders.entrySet()) {
+                results.put(entry.getKey(), deleteRecursively(entry.getValue().toPath()));
+                deleteParentIfEmpty(entry.getValue());
             }
-        }
-        return groups;
-    }
-
-    private static boolean deleteWorldFolder(File folder) {
-        if (folder.exists()) {
-            File[] files = folder.listFiles();
-            if (files != null) {
-                for (File file : files) {
-                    if (file.isDirectory()) {
-                        deleteWorldFolder(file);
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                running = false;
+                for (Map.Entry<String, Boolean> result : results.entrySet()) {
+                    if (result.getValue()) {
+                        sender.sendMessage("Deleted world folder: " + result.getKey());
                     } else {
-                        file.delete();
+                        sender.sendMessage("Failed to delete world folder: " + result.getKey());
+                        keep.add(result.getKey());
                     }
                 }
-            }
+                // Keep anything that could not be deleted in delete_worlds.yml
+                deleteWorldsConfig.set("delete_worlds", keep);
+                try {
+                    deleteWorldsConfig.save(deleteWorldsFile);
+                } catch (IOException e) {
+                    sender.sendMessage("Failed to update delete_worlds.yml");
+                    plugin.getLogger().log(Level.SEVERE, "Failed to update delete_worlds.yml", e);
+                }
+            });
+        });
+    }
+
+    private static boolean deleteRecursively(Path root) {
+        if (!Files.exists(root)) {
+            return true;
         }
-        return folder.delete();
+        try (Stream<Path> paths = Files.walk(root)) {
+            paths.sorted(Comparator.reverseOrder()).forEach(path -> {
+                try {
+                    Files.delete(path);
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+            return true;
+        } catch (IOException | RuntimeException e) {
+            CoManyWorld.getInstance().getLogger().log(Level.WARNING, "Failed to delete " + root, e);
+            return false;
+        }
+    }
+
+    /** Removes many_world/<name>/ once all of its worlds are gone. */
+    private static void deleteParentIfEmpty(File worldFolder) {
+        File parent = worldFolder.getParentFile();
+        File root = new File(Bukkit.getWorldContainer(), WorldNames.ROOT);
+        try {
+            if (parent != null && !parent.getCanonicalFile().equals(root.getCanonicalFile())) {
+                String[] remaining = parent.list();
+                if (remaining != null && remaining.length == 0) {
+                    Files.deleteIfExists(parent.toPath());
+                }
+            }
+        } catch (IOException ignored) {
+            // Leaving an empty folder behind is harmless.
+        }
     }
 }

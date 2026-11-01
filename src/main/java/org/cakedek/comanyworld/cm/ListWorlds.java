@@ -1,7 +1,7 @@
 package org.cakedek.comanyworld.cm;
 
-import net.md_5.bungee.api.ChatColor;
 import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
 import org.bukkit.World;
 import org.bukkit.command.CommandSender;
 
@@ -11,7 +11,9 @@ public class ListWorlds {
         for (World world : Bukkit.getWorlds()) {
             String worldName = world.getName();
             String worldType = getWorldType(world.getEnvironment());
-            worldList.append(ChatColor.YELLOW).append("- ").append(ChatColor.WHITE).append(worldName).append(ChatColor.GRAY).append(" [").append(ChatColor.GREEN).append(worldType).append(ChatColor.GRAY).append("]\n");
+            worldList.append(ChatColor.YELLOW).append("- ").append(ChatColor.WHITE).append(worldName)
+                    .append(ChatColor.GRAY).append(" [").append(ChatColor.GREEN).append(worldType).append(ChatColor.GRAY).append("]")
+                    .append(ChatColor.GRAY).append(" (").append(world.getPlayers().size()).append(" players)\n");
         }
         sender.sendMessage(worldList.toString());
     }
@@ -23,8 +25,9 @@ public class ListWorlds {
             case THE_END:
                 return "The End";
             case NORMAL:
-            default:
                 return "World";
+            default:
+                return environment.name();
         }
     }
 }

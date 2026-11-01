@@ -1,0 +1,82 @@
+# Creates a GitHub Release when a tag is pushed, e.g.
+#   git tag 1.1.0_Preview && git push origin 1.1.0_Preview
+#
+# The jar is built here on GitHub's runner from the tagged commit, after the tests pass,
+# and gets a signed build provenance attestation, so anyone can check where it came from:
+#   gh attestation verify CoManyWorld-1.1.0-Preview.jar -R MC-OSOC/CoManyWorld
+#
+# See docs/RELEASING.md
+name: Release
+
+on:
+  push:
+    tags: ['*']
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write      # create the release and upload the jar
+      id-token: write      # sign the attestation
+      attestations: write  # store the attestation
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Check that the tag matches the version in pom.xml
+        run: |
+          VERSION=$(mvn -B -q help:evaluate -Dexpression=project.version -DforceStdout)
+          TAG="$GITHUB_REF_NAME"
+          if [ "${TAG//_/-}" != "$VERSION" ]; then
+            echo "::error::Tag '$TAG' does not match pom.xml version '$VERSION'. Use the tag '${VERSION//-/_}' or change the version in pom.xml."
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Test (Paper API + MockBukkit)
+        run: mvn -B -Ppaper clean verify
+
+      - name: Build release jar (Spigot API)
+        run: |
+          mvn -B clean package
+          cd target
+          sha256sum "CoManyWorld-$VERSION.jar" > "CoManyWorld-$VERSION.jar.sha256"
+          cat "CoManyWorld-$VERSION.jar.sha256"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: target/CoManyWorld-${{ env.VERSION }}.jar
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="$GITHUB_REF_NAME"
+          FILES=("target/CoManyWorld-$VERSION.jar" "target/CoManyWorld-$VERSION.jar.sha256")
+
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            # A release (e.g. a draft written on the website) already exists for this tag: attach the files.
+            gh release upload "$TAG" "${FILES[@]}" --clobber
+            exit 0
+          fi
+
+          ARGS=(--title "${TAG//_/ }" --verify-tag)
+          NOTES=".github/release-notes/$TAG.md"
+          if [ -f "$NOTES" ]; then
+            ARGS+=(--notes-file "$NOTES")
+          else
+            ARGS+=(--generate-notes)
+          fi
+          case "${TAG,,}" in
+            *preview*|*alpha*|*beta*|*-rc*) ARGS+=(--prerelease) ;;
+          esac
+          gh release create "$TAG" "${FILES[@]}" "${ARGS[@]}"

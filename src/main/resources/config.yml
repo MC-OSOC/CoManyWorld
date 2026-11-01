@@ -1,7 +1,10 @@
 # Configuration file for CoManyWorld
 default-world-type: -11  # Default to normal world
-default-world: 'World'
+# Where players respawn when they die outside a CoManyWorld world (falls back to "world").
+default-world: 'world'
+# Used for portals when a CoManyWorld world has no Nether / End of its own
+# (only when prevent-single-world-portals is false).
 default-nether-world: 'world_nether'
 default-end-world: 'world_the_end'
-worlds: []   # List of worlds to be loaded on startup
-prevent-single-world-portals: true  # Prevent portal usage in single worlds
+worlds: []   # List of worlds to be loaded on startup (managed by the plugin)
+prevent-single-world-portals: true  # Prevent portal usage in worlds that don't have all 3 dimensions
