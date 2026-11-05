@@ -20,6 +20,12 @@ on:
         description: 'Tag to create on main, e.g. 1.1.0_Preview (must match the version in pom.xml, with "-" written as "_")'
         required: true
         type: string
+      prerelease:
+        description: 'Mark the release as a pre-release? "auto" = yes if the tag contains Preview, alpha, beta or -rc'
+        required: false
+        default: 'auto'
+        type: choice
+        options: ['auto', 'yes', 'no']
 
 permissions:
   contents: read
@@ -38,6 +44,8 @@ jobs:
     env:
       # The tag being released: the pushed tag, or the one typed in when pressing "Run workflow".
       TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      # auto / yes / no (a pushed tag is always "auto")
+      PRERELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease || 'auto' }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Check where the release comes from
@@ -111,7 +119,13 @@ jobs:
           else
             ARGS+=(--generate-notes)
           fi
-          case "${TAG,,}" in
-            *preview*|*alpha*|*beta*|*-rc*) ARGS+=(--prerelease) ;;
+          case "$PRERELEASE" in
+            yes) ARGS+=(--prerelease) ;;
+            no) ARGS+=(--latest) ;;
+            *)
+              case "${TAG,,}" in
+                *preview*|*alpha*|*beta*|*-rc*) ARGS+=(--prerelease) ;;
+              esac
+              ;;
           esac
           gh release create "$TAG" "${FILES[@]}" "${ARGS[@]}"

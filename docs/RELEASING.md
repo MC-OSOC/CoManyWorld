@@ -80,6 +80,7 @@ repo นี้มี workflow 4 ตัวใน `.github/workflows/`
    ถ้าไม่ตรงกัน workflow จะหยุดและไม่สร้าง release
 5. ดูความคืบหน้าที่แท็บ **Actions → Release** ใช้เวลาไม่กี่นาที แล้ว Release จะขึ้นที่หน้า **Releases**
    - tag ที่มีคำว่า `Preview`, `alpha`, `beta` หรือ `-rc` จะถูกตั้งเป็น **pre-release** ให้อัตโนมัติ
+   - ถ้าต้องการให้ release ที่ชื่อ tag มีคำว่า `Preview` เป็น release ปกติ (ไม่ติดป้าย pre-release) ให้เลือก **Mark the release as a pre-release? = no** ตอนกด *Run workflow* (`yes` บังคับเป็น pre-release, `auto` คือกติกาข้างบน)
 
 > **ทางเลือก:** สร้าง Release ผ่านหน้าเว็บ (Releases → Draft a new release → สร้าง tag ใหม่) ก็ได้
 > workflow จะแนบ `.jar` เข้า release นั้นให้เอง แต่ถ้าเปิด Immutable releases ไว้ ให้กด **Save draft**
