@@ -32,6 +32,8 @@ mvn package
 
 การออก Release ผ่าน GitHub Actions: ดู [docs/RELEASING.md](docs/RELEASING.md)
 
+ทุก Pull Request จะถูกทดสอบบนเซิร์ฟเวอร์จริง (Paper 1.21.11, Paper 26.1 และ Spigot 1.21.11) โดย workflow [Server test](.github/workflows/server-test.yml): สร้างโลกทุกชนิด ตรวจภูมิประเทศ ใช้บอท [mineflayer](https://github.com/PrismarineJS/mineflayer) เข้าเล่นเป็นผู้เล่นทั่วไปเพื่อทดสอบสิทธิ์ `tp` แล้วรีสตาร์ตเซิร์ฟเวอร์เพื่อตรวจว่าโลกถูกโหลดกลับมาเป็นชนิดเดิม โค้ดทดสอบอยู่ใน [server-test/](server-test/)
+
 ## คำสั่ง
 
 #### สร้างโลกใหม่

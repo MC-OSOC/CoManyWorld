@@ -1,0 +1,10 @@
+{
+  "name": "comanyworld-server-test",
+  "private": true,
+  "description": "Starts a real Paper / Spigot server with the plugin and plays against it with a bot (see ../.github/workflows/server-test.yml)",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "dependencies": {
+    "mineflayer": "^4.39.0"
+  }
+}

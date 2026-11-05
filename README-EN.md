@@ -32,6 +32,8 @@ To check that the code also compiles against the Paper API and run the tests (Mo
 
 Releases are built by GitHub Actions: see [docs/RELEASING.md](docs/RELEASING.md) (Thai).
 
+Every pull request is also tested on real servers (Paper 1.21.11, Paper 26.1 and Spigot 1.21.11) by the [Server test](.github/workflows/server-test.yml) workflow: it creates every kind of world, checks the terrain, joins as an ordinary player with a [mineflayer](https://github.com/PrismarineJS/mineflayer) bot to check the `tp` permissions, and restarts the server to check that the worlds come back with the same type. The test code is in [server-test/](server-test/).
+
 ## Commands
 
 #### Create a new world

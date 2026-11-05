@@ -28,3 +28,10 @@ replay_pid*
 target/
 dependency-reduced-pom.xml
 release/
+
+# Real-server test (server-test/)
+server-test/node_modules/
+server-test/work/
+buildtools/
+spigot-out/
+paper-*.json
