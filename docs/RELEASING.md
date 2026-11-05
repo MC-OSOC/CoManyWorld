@@ -99,13 +99,13 @@ repo นี้มี workflow 4 ตัวใน `.github/workflows/`
 
 **ตรวจว่าไฟล์มาจาก repo นี้จริง** (ต้องมี [GitHub CLI](https://cli.github.com/)):
 ```bash
-gh attestation verify CoManyWorld-1.1.0-Preview.jar -R MC-OSOC/CoManyWorld
+gh attestation verify CoManyWorld-1.2.0-Preview.jar -R MC-OSOC/CoManyWorld
 ```
 ถ้าผ่าน จะแสดงว่าไฟล์ถูก build โดย workflow `release.yml` จาก commit/tag ไหน
 
 **ตรวจว่าไฟล์ไม่เสียระหว่างดาวน์โหลด:** ดาวน์โหลดไฟล์ `.sha256` คู่กันแล้วรัน
 ```bash
-sha256sum -c CoManyWorld-1.1.0-Preview.jar.sha256
+sha256sum -c CoManyWorld-1.2.0-Preview.jar.sha256
 ```
 
 > Attestation ใช้ได้ฟรีกับ repo สาธารณะ ถ้า repo เป็น private ต้องใช้ GitHub Enterprise Cloud
