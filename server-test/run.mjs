@@ -260,6 +260,33 @@ async function forceload(server, world, x, z) {
   expect(!/Unknown dimension|Incorrect argument/i.test(out), `forceload failed: ${out.trim()}`);
 }
 
+/**
+ * Samples a flat world at 5 spots 48 blocks apart. A single spot is not enough: worlds made with
+ * /co-many create have structures on and a random seed, so a village can cover the spot that is
+ * looked at. Returns how many spots have bedrock at the bottom, a grass block at y=-61 and air at y=-60.
+ */
+async function sampleFlat(server, world, cx, cz) {
+  const spots = [[0, 0], [48, 48], [-48, 48], [48, -48], [-48, -48]].map(([dx, dz]) => [cx + dx, cz + dz]);
+  for (const [x, z] of spots) {
+    await forceload(server, world, x, z);
+  }
+  const score = { bedrock: 0, grass: 0, air: 0 };
+  for (const [x, z] of spots) {
+    if (await blockIs(server, world, x, -64, z, 'minecraft:bedrock')) score.bedrock++;
+    if (await blockIs(server, world, x, -61, z, 'minecraft:grass_block')) score.grass++;
+    if (await blockIs(server, world, x, -60, z, 'minecraft:air')) score.air++;
+  }
+  return score;
+}
+
+function expectFlat(score, what) {
+  const text = `bedrock ${score.bedrock}/5, grass ${score.grass}/5, air above ${score.air}/5`;
+  // Bedrock can never be changed. A village may replace a few spots, but a world that is not flat
+  // has grass at y=-61 in none of them.
+  expect(score.bedrock === 5 && score.grass >= 3 && score.air >= 3, `${what} (${text})`);
+  return text;
+}
+
 /** True if `player` is standing in `world`, according to the server. */
 async function playerIn(server, player, world, timeoutMs = 15000) {
   const end = Date.now() + timeoutMs;
@@ -415,10 +442,7 @@ async function phaseOne() {
   });
 
   await check('flat world: bedrock, dirt and grass layers', async () => {
-    await forceload(server, WORLDS.flat, 0, 0);
-    expect(await blockIs(server, WORLDS.flat, 0, -64, 0, 'minecraft:bedrock'), 'no bedrock at y=-64');
-    expect(await blockIs(server, WORLDS.flat, 0, -61, 0, 'minecraft:grass_block'), 'no grass at y=-61');
-    expect(await blockIs(server, WORLDS.flat, 0, -60, 0, 'minecraft:air'), 'not flat: something above the grass');
+    return expectFlat(await sampleFlat(server, WORLDS.flat, 0, 0), 'the world is not flat');
   });
 
   await check('large biomes and amplified worlds generate terrain', async () => {
@@ -551,9 +575,7 @@ async function phaseTwo() {
   });
 
   await check('restart: the flat world is still flat far away', async () => {
-    await forceload(server, WORLDS.flat, 1000, 1000);
-    expect(await blockIs(server, WORLDS.flat, 1000, -61, 1000, 'minecraft:grass_block'), 'no grass at y=-61: the world is no longer flat');
-    expect(await blockIs(server, WORLDS.flat, 1000, -60, 1000, 'minecraft:air'), 'something above the grass: the world is no longer flat');
+    return expectFlat(await sampleFlat(server, WORLDS.flat, 1000, 1000), 'the world is no longer flat');
   });
 
   await check('restart: the player can still join and tp', async () => {
