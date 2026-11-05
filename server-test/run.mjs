@@ -267,7 +267,8 @@ async function playerIn(server, player, world, timeoutMs = 15000) {
     const mark = server.log.length;
     server.send(`execute as ${player} at @s if dimension ${dimension(world)} run say ${tag}`);
     await sleep(700);
-    if (server.since(mark).includes(`[Server] ${tag}`)) {
+    // "say" run as a player is printed as "[<player>] <tag>"
+    if (new RegExp(`\\[${player}\\] ${tag}\\s*$`, 'm').test(server.since(mark))) {
       return true;
     }
   }
@@ -305,6 +306,10 @@ function prepare() {
       'spawn-protection=0',
       'motd=CoManyWorld CI',
       'level-seed=1',
+      // The bot must not be killed by mobs (flat worlds spawn slimes)
+      'difficulty=peaceful',
+      'spawn-monsters=false',
+      'spawn-animals=false',
       'max-tick-time=-1',
       '',
     ].join('\n'),
@@ -431,9 +436,9 @@ async function phaseOne() {
     expect(/permission to teleport/.test(denied), `expected a refusal, got: ${denied}`);
     expect(!(await playerIn(server, PLAYER, WORLDS.comboNether, 3000)), 'the player was teleported anyway');
 
-    const allowed = await player.command(`/co-many tp ${WORLDS.combo}`, 500);
-    await player.waitMessage(/Teleported to/, 0, 20000).catch(() => {});
-    expect(/Teleported to/.test(allowed + player.messages.join('\n')), `no teleport confirmation: ${player.messages.join(' | ')}`);
+    const tpFrom = player.messages.length;
+    player.bot.chat(`/co-many tp ${WORLDS.combo}`);
+    await player.waitMessage(/Teleported to/, tpFrom, 20000);
     expect(await playerIn(server, PLAYER, WORLDS.combo), 'the player is not in the combo world');
   });
 
@@ -460,12 +465,13 @@ async function phaseOne() {
   await check('after /op the same player can create worlds and tp anywhere', async () => {
     await server.run(`op ${PLAYER}`, /Made .* a server operator/);
     await sleep(500);
-    const mark = server.log.length;
+    // The answer goes to the player who typed the command, not to the console
+    const from = player.messages.length;
     player.bot.chat('/co-many create fromplayer -11 -flat');
-    await server.waitFor(/World fromplayer created: many_world\/fromplayer\/world Type: flat/, 120000, mark);
-    const out = await player.command(`/co-many tp ${WORLDS.void}`, 500);
-    await player.waitMessage(/Teleported to/, 0, 20000).catch(() => {});
-    expect(/Teleported to/.test(out + player.messages.join('\n')), 'no teleport confirmation');
+    await player.waitMessage(/World fromplayer created: many_world\/fromplayer\/world Type: flat/, from, 120000);
+    const tpFrom = player.messages.length;
+    player.bot.chat(`/co-many tp ${WORLDS.void}`);
+    await player.waitMessage(/Teleported to/, tpFrom, 20000);
     expect(await playerIn(server, PLAYER, WORLDS.void), 'the player is not in the void world');
   });
 
@@ -484,9 +490,10 @@ async function phaseOne() {
   });
 
   await check('/co-many tp back to the default world', async () => {
-    const out = await player.command('/co-many tp world', 500);
-    await player.waitMessage(/Teleported to/, 0, 20000).catch(() => {});
-    expect(await playerIn(server, PLAYER, 'world'), `the player did not return to "world". ${out}`);
+    const tpFrom = player.messages.length;
+    player.bot.chat('/co-many tp world');
+    await player.waitMessage(/Teleported to/, tpFrom, 20000);
+    expect(await playerIn(server, PLAYER, 'world'), 'the player did not return to "world"');
   });
 
   await player.leave();
@@ -551,9 +558,9 @@ async function phaseTwo() {
   await check('restart: the player can still join and tp', async () => {
     player = new Player(PLAYER);
     await player.join();
-    const out = await player.command(`/co-many tp ${WORLDS.void}`, 500);
-    await player.waitMessage(/Teleported to/, 0, 20000).catch(() => {});
-    expect(/Teleported to/.test(out + player.messages.join('\n')), 'no teleport confirmation');
+    const tpFrom = player.messages.length;
+    player.bot.chat(`/co-many tp ${WORLDS.void}`);
+    await player.waitMessage(/Teleported to/, tpFrom, 20000);
     expect(await playerIn(server, PLAYER, WORLDS.void), 'the player is not in the void world');
     await player.leave();
   });
