@@ -6,6 +6,7 @@ import org.bukkit.World;
 import org.bukkit.WorldCreator;
 import org.bukkit.command.CommandSender;
 import org.cakedek.comanyworld.CoManyWorld;
+import org.cakedek.comanyworld.WorldFolders;
 import org.cakedek.comanyworld.WorldNames;
 
 import java.io.*;
@@ -16,14 +17,42 @@ import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
+/**
+ * Imports a world folder or .zip from plugins/CoManyWorld/import as many_world/&lt;name&gt;/world.
+ * <p>
+ * Two kinds of world data are recognised:
+ * <ul>
+ *   <li>a folder with level.dat: single player saves, Spigot, Paper 1.21 and older
+ *       (and backups made there). Copied to &lt;server&gt;/many_world/...; Paper 26.x moves it into
+ *       its dimensions folder by itself when the world is loaded.</li>
+ *   <li>a Paper 26.x world folder (data/paper/level_overrides.dat, no level.dat), e.g. a backup made
+ *       with /co-many backup on Paper 26.x. Copied straight into the dimensions folder; only possible
+ *       on a server that uses that layout.</li>
+ * </ul>
+ */
 public class WorldImport {
 
     /**
-     * Files that must not be copied: session.lock belongs to whoever had the world open,
-     * and uid.dat makes the server refuse to load a second copy of the same world.
+     * Files that must not be copied: session.lock belongs to whoever had the world open, and the
+     * world's id (uid.dat, or data/paper/metadata.dat on Paper 26.x) makes the server refuse to load a
+     * second copy of the same world.
      */
     private static final Set<String> SKIPPED_FILES = new HashSet<>(Arrays.asList("session.lock", "uid.dat"));
+    private static final String PAPER_METADATA = "data/paper/metadata.dat";
+    /** Disk space that must stay free after an import. */
+    private static final long SPARE_BYTES = 512L * 1024 * 1024;
+    private static final int MAX_SEARCH_DEPTH = 8;
     private static final Set<String> IN_PROGRESS = new HashSet<>();
+
+    private enum Format { LEVEL_DAT, PAPER_DIMENSION }
+
+    private record Found(File folder, Format format) {
+    }
+
+    /** True while a world group is being imported (main thread only). */
+    public static boolean isImporting(String groupName) {
+        return IN_PROGRESS.contains(groupName);
+    }
 
     public static void importWorld(CommandSender sender, String fileName) {
         CoManyWorld plugin = CoManyWorld.getInstance();
@@ -44,6 +73,10 @@ public class WorldImport {
             sender.sendMessage("World file or folder not found: " + worldFile.getAbsolutePath());
             return;
         }
+        if (Files.isSymbolicLink(worldFile.toPath())) {
+            sender.sendMessage(ChatColor.RED + "Symbolic links are not supported. Copy the world into the import folder.");
+            return;
+        }
         boolean isZip = worldFile.isFile() && fileName.toLowerCase(Locale.ROOT).endsWith(".zip");
         if (!worldFile.isDirectory() && !isZip) {
             sender.sendMessage("Unsupported file type. Please use a folder or a zip file.");
@@ -56,45 +89,47 @@ public class WorldImport {
             return;
         }
 
-        String newWorldName = WorldNames.ROOT + cleanWorldName;
-        String worldName = newWorldName + "/" + WorldNames.OVERWORLD;
-        File newWorldFolder = new File(Bukkit.getWorldContainer(), newWorldName);
-        if (newWorldFolder.exists() || Bukkit.getWorld(worldName) != null || IN_PROGRESS.contains(newWorldName)) {
+        String groupName = WorldNames.ROOT + cleanWorldName;
+        String worldName = groupName + "/" + WorldNames.OVERWORLD;
+        if (WorldFolders.existsOnDisk(groupName) || Bukkit.getWorld(worldName) != null || IN_PROGRESS.contains(groupName)
+                || CreateWorld.isCreating(groupName)
+                || plugin.getConfig().getStringList("worlds").stream().anyMatch(worldName::equalsIgnoreCase)) {
             sender.sendMessage(ChatColor.RED + "A world named " + cleanWorldName + " already exists.");
             return;
         }
-        File target = new File(newWorldFolder, WorldNames.OVERWORLD);
+        // Worked out here, on the main thread, because it asks the server about its worlds.
+        File levelDatTarget = WorldFolders.legacyFolder(worldName);
+        // import-max-size-mb in config.yml, 0 = only limited by the free disk space
+        long maxBytes = Math.max(0, plugin.getConfig().getLong("import-max-size-mb", 0)) * 1024 * 1024;
+        File dimensionTarget = WorldFolders.usesDimensionFolders() ? WorldFolders.dimensionFolder(worldName) : null;
+        // The group folders don't exist yet (checked above), so on failure they can be removed entirely.
+        List<File> createdGroups = new ArrayList<>();
+        createdGroups.add(WorldFolders.legacyFolder(groupName));
+        if (WorldFolders.dimensionFolder(groupName) != null) {
+            createdGroups.add(WorldFolders.dimensionFolder(groupName));
+        }
 
-        IN_PROGRESS.add(newWorldName);
+        IN_PROGRESS.add(groupName);
         sender.sendMessage("Importing " + fileName + "...");
         // Copying a world can take a while, so do it off the main thread.
         Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
             String error = null;
             try {
-                if (isZip) {
-                    if (!unzipAndCopyWorldRoot(worldFile, target)) {
-                        error = "Failed to find or extract world data from the zip file (no level.dat).";
-                    }
-                } else {
-                    File worldRootFolder = findWorldRootFolder(worldFile);
-                    if (worldRootFolder == null) {
-                        error = "level.dat not found in the provided folder.";
-                    } else {
-                        copyFolder(worldRootFolder.toPath(), target.toPath());
-                    }
-                }
+                error = isZip
+                        ? copyFromZip(worldFile, levelDatTarget, dimensionTarget, maxBytes)
+                        : copyFromFolder(worldFile, levelDatTarget, dimensionTarget, maxBytes);
             } catch (IOException | RuntimeException e) {
                 error = "Failed to import world: " + e.getMessage();
                 plugin.getLogger().log(Level.SEVERE, "Failed to import world " + fileName, e);
             }
             if (error != null) {
-                deleteFolder(newWorldFolder.toPath());
+                createdGroups.forEach(folder -> deleteFolder(folder.toPath()));
             }
 
             String finalError = error;
             // Worlds can only be loaded on the main thread.
             Bukkit.getScheduler().runTask(plugin, () -> {
-                IN_PROGRESS.remove(newWorldName);
+                IN_PROGRESS.remove(groupName);
                 if (finalError != null) {
                     sender.sendMessage(finalError);
                     return;
@@ -107,7 +142,7 @@ public class WorldImport {
                 }
                 if (world == null) {
                     sender.sendMessage("Failed to create the world " + worldName + ".");
-                    deleteFolder(newWorldFolder.toPath());
+                    createdGroups.forEach(folder -> deleteFolder(folder.toPath()));
                     return;
                 }
                 sender.sendMessage("World " + cleanWorldName + " has been successfully imported to " + worldName);
@@ -123,74 +158,133 @@ public class WorldImport {
         });
     }
 
-    private static File findWorldRootFolder(File folder) {
-        File levelDat = new File(folder, "level.dat");
-        if (levelDat.exists()) {
-            return folder;
+    /** Returns an error message, or null when the world was copied. */
+    private static String copyFromFolder(File source, File levelDatTarget, File dimensionTarget, long maxBytes) throws IOException {
+        Found found = findWorldRoot(source, 0);
+        if (found == null) {
+            return "level.dat not found in the provided folder (and it is not a Paper 26 world folder either).";
         }
-
-        File[] subFolders = folder.listFiles(File::isDirectory);
-        if (subFolders != null) {
-            Arrays.sort(subFolders);
-            for (File subFolder : subFolders) {
-                File found = findWorldRootFolder(subFolder);
-                if (found != null) {
-                    return found;
-                }
-            }
+        File target = targetFor(found, levelDatTarget, dimensionTarget);
+        if (target == null) {
+            return paperOnlyMessage();
         }
-
+        long size = sizeOf(found.folder().toPath());
+        if (size > limit(maxBytes, freeSpace(target))) {
+            return "This world is too big to import (" + (size / (1024 * 1024)) + " MB): not enough free disk space,"
+                    + " or bigger than import-max-size-mb in config.yml.";
+        }
+        copyFolder(found.folder().toPath(), target.toPath(), found.format());
         return null;
     }
 
-    private static boolean unzipAndCopyWorldRoot(File zipFile, File destDir) throws IOException {
+    private static String copyFromZip(File zipFile, File levelDatTarget, File dimensionTarget, long maxBytes) throws IOException {
         File cacheFolder = new File(CoManyWorld.getInstance().getDataFolder(), "import/cache");
         cacheFolder.mkdirs();
         Path tempDir = Files.createTempDirectory(cacheFolder.toPath(), "temp");
-
         try {
-            try (ZipInputStream zis = new ZipInputStream(new BufferedInputStream(new FileInputStream(zipFile)))) {
-                ZipEntry zipEntry;
-                while ((zipEntry = zis.getNextEntry()) != null) {
-                    Path newFile = newFile(tempDir, zipEntry);
-                    if (zipEntry.isDirectory()) {
-                        Files.createDirectories(newFile);
-                    } else {
-                        Files.createDirectories(newFile.getParent());
-                        Files.copy(zis, newFile, StandardCopyOption.REPLACE_EXISTING);
-                    }
-                    zis.closeEntry();
-                }
+            // The world is unpacked here and then copied once more, so it may use half of the free space.
+            unzip(zipFile, tempDir, limit(maxBytes, freeSpace(cacheFolder) / 2));
+            Found found = findWorldRoot(tempDir.toFile(), 0);
+            if (found == null) {
+                return "Failed to find or extract world data from the zip file (no level.dat, and not a Paper 26 world folder).";
             }
-
-            File worldRoot = findWorldRootFolder(tempDir.toFile());
-            if (worldRoot == null) {
-                return false;
+            File target = targetFor(found, levelDatTarget, dimensionTarget);
+            if (target == null) {
+                return paperOnlyMessage();
             }
-            copyFolder(worldRoot.toPath(), destDir.toPath());
-            return true;
+            copyFolder(found.folder().toPath(), target.toPath(), found.format());
+            return null;
         } finally {
             deleteFolder(tempDir);
         }
     }
 
-    /** Protects against "zip slip" entries such as ../../plugins/evil.jar */
+    private static File targetFor(Found found, File levelDatTarget, File dimensionTarget) {
+        return found.format() == Format.LEVEL_DAT ? levelDatTarget : dimensionTarget;
+    }
+
+    private static String paperOnlyMessage() {
+        return "This world was saved by Paper 26 or newer (it has no level.dat), so it can only be imported on such a server.";
+    }
+
+    private static Found findWorldRoot(File folder, int depth) {
+        if (new File(folder, "level.dat").isFile()) {
+            return new Found(folder, Format.LEVEL_DAT);
+        }
+        if (new File(folder, "data/paper/level_overrides.dat").isFile()) {
+            return new Found(folder, Format.PAPER_DIMENSION);
+        }
+        if (depth >= MAX_SEARCH_DEPTH) {
+            return null;
+        }
+        // Symbolic links are not followed: they could point anywhere on the machine, or in a circle.
+        File[] subFolders = folder.listFiles(file -> file.isDirectory() && !Files.isSymbolicLink(file.toPath()));
+        if (subFolders != null) {
+            Arrays.sort(subFolders);
+            for (File subFolder : subFolders) {
+                Found found = findWorldRoot(subFolder, depth + 1);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** Unzips into tempDir, refusing entries outside it and stopping once more than maxBytes were written. */
+    private static void unzip(File zipFile, Path tempDir, long maxBytes) throws IOException {
+        long written = 0;
+        byte[] buffer = new byte[64 * 1024];
+        try (ZipInputStream zis = new ZipInputStream(new BufferedInputStream(new FileInputStream(zipFile)))) {
+            ZipEntry zipEntry;
+            while ((zipEntry = zis.getNextEntry()) != null) {
+                Path newFile = newFile(tempDir, zipEntry);
+                if (newFile == null) {
+                    continue; // an entry for the zip's root itself, e.g. "./"
+                }
+                if (zipEntry.isDirectory()) {
+                    Files.createDirectories(newFile);
+                } else {
+                    Files.createDirectories(newFile.getParent());
+                    try (OutputStream out = Files.newOutputStream(newFile)) {
+                        int read;
+                        while ((read = zis.read(buffer)) > 0) {
+                            written += read;
+                            if (written > maxBytes) {
+                                throw new IOException("the zip file unpacks to more than the free disk space"
+                                        + " or import-max-size-mb in config.yml allows");
+                            }
+                            out.write(buffer, 0, read);
+                        }
+                    }
+                }
+                zis.closeEntry();
+            }
+        }
+    }
+
+    /** Protects against "zip slip" entries such as ../../plugins/evil.jar. Null for the root itself. */
     private static Path newFile(Path tempDir, ZipEntry zipEntry) throws IOException {
         Path destinationDir = tempDir.toAbsolutePath().normalize();
         Path destFile = destinationDir.resolve(zipEntry.getName()).normalize();
         if (!destFile.startsWith(destinationDir)) {
             throw new IOException("Entry is outside of the target dir: " + zipEntry.getName());
         }
-        return destFile;
+        return destFile.equals(destinationDir) ? null : destFile;
     }
 
-    private static void copyFolder(Path source, Path destination) throws IOException {
+    private static void copyFolder(Path source, Path destination, Format format) throws IOException {
         try (Stream<Path> walk = Files.walk(source)) {
             for (Path path : (Iterable<Path>) walk::iterator) {
-                Path target = destination.resolve(source.relativize(path).toString());
+                if (Files.isSymbolicLink(path)) {
+                    continue; // never copy what a link points to
+                }
+                String relative = source.relativize(path).toString().replace('\\', '/');
+                Path target = destination.resolve(relative);
                 if (Files.isDirectory(path)) {
                     Files.createDirectories(target);
-                } else if (!SKIPPED_FILES.contains(path.getFileName().toString())) {
+                } else if (!SKIPPED_FILES.contains(path.getFileName().toString())
+                        && !(format == Format.PAPER_DIMENSION && relative.equals(PAPER_METADATA))) {
                     Files.createDirectories(target.getParent());
                     Files.copy(path, target, StandardCopyOption.REPLACE_EXISTING);
                 }
@@ -198,8 +292,31 @@ public class WorldImport {
         }
     }
 
+    private static long sizeOf(Path folder) throws IOException {
+        try (Stream<Path> walk = Files.walk(folder)) {
+            return walk.filter(path -> Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS))
+                    .mapToLong(path -> path.toFile().length())
+                    .sum();
+        }
+    }
+
+    /** The configured limit (0 = none) or the free space, whichever is smaller. */
+    private static long limit(long configured, long free) {
+        return configured > 0 ? Math.min(configured, free) : free;
+    }
+
+    /** Free space on the disk the file will be written to, minus what must stay free. */
+    private static long freeSpace(File file) {
+        File existing = file.getAbsoluteFile();
+        while (existing != null && !existing.exists()) {
+            existing = existing.getParentFile();
+        }
+        long usable = existing == null ? 0 : existing.getUsableSpace();
+        return Math.max(0, usable - SPARE_BYTES);
+    }
+
     private static void deleteFolder(Path folder) {
-        if (!Files.exists(folder)) {
+        if (!Files.exists(folder, LinkOption.NOFOLLOW_LINKS)) {
             return;
         }
         try (Stream<Path> walk = Files.walk(folder)) {

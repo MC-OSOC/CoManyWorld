@@ -33,5 +33,5 @@ release/
 server-test/node_modules/
 server-test/work/
 buildtools/
-spigot-out/
+spigot.jar
 paper-*.json

@@ -14,15 +14,26 @@ import java.util.Locale;
 
 /**
  * MockBukkit server that behaves a bit more like a real one for this plugin:
- * worlds have real folders on disk (level.dat, region files, session.lock, uid.dat),
- * world names are case-insensitive, and createWorld returns an already loaded world.
+ * worlds have real folders on disk, world names are case-insensitive, and createWorld returns
+ * an already loaded world.
+ * <p>
+ * Two layouts, like the real servers (checked on GitHub Actions, see .github/workflows/server-test.yml):
+ * <ul>
+ *   <li>Spigot / Paper 1.21: &lt;server&gt;/&lt;name&gt; with level.dat, region/, session.lock, uid.dat</li>
+ *   <li>Paper 26.x ({@code dimensionFolders}): &lt;server&gt;/world/dimensions/minecraft/&lt;name&gt; with
+ *       data/paper/level_overrides.dat, data/paper/metadata.dat (the world's id) and region/, but no level.dat.
+ *       The main Nether and End are the_nether and the_end there. An old-layout folder &lt;server&gt;/&lt;name&gt;
+ *       is moved into place when the world is loaded, like Paper's LegacyCraftBukkitWorldMigration.</li>
+ * </ul>
  */
 public class TestServer extends ServerMock {
 
     private final File container;
+    private final boolean dimensionFolders;
 
-    public TestServer(File container) {
+    public TestServer(File container, boolean dimensionFolders) {
         this.container = container;
+        this.dimensionFolders = dimensionFolders;
         container.mkdirs();
     }
 
@@ -43,7 +54,27 @@ public class TestServer extends ServerMock {
         if (existing != null) {
             return existing;
         }
-        DiskWorld world = new DiskWorld(creator, new File(container, creator.name()));
+        String name = creator.name();
+        boolean dimension = dimensionFolders && !name.equals("world");
+        File folder = new File(container, name);
+        if (dimension) {
+            String key = switch (name) {
+                case "world_nether" -> "the_nether";
+                case "world_the_end" -> "the_end";
+                default -> name.toLowerCase(Locale.ROOT);
+            };
+            File legacy = folder;
+            folder = new File(container, "world/dimensions/minecraft/" + key);
+            if (legacy.isDirectory() && !folder.exists()) {
+                try {
+                    Files.createDirectories(folder.getParentFile().toPath());
+                    Files.move(legacy.toPath(), folder.toPath());
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+            }
+        }
+        DiskWorld world = new DiskWorld(creator, folder, dimension);
         addWorld(world);
         return world;
     }
@@ -52,25 +83,33 @@ public class TestServer extends ServerMock {
         private final File folder;
         public int saveCount = 0;
 
-        DiskWorld(WorldCreator creator, File folder) {
+        DiskWorld(WorldCreator creator, File folder, boolean dimension) {
             super(creator);
             this.folder = folder;
             try {
                 Files.createDirectories(folder.toPath().resolve("region"));
-                // A real server keeps level.dat if it exists (imported world) and writes these on load
-                if (!new File(folder, "level.dat").exists()) {
-                    Files.writeString(folder.toPath().resolve("level.dat"), "level of " + creator.name());
-                }
                 if (!new File(folder, "region/r.0.0.mca").exists()) {
                     Files.write(folder.toPath().resolve("region/r.0.0.mca"), new byte[64 * 1024]);
                 }
-                Files.writeString(folder.toPath().resolve("session.lock"), "lock");
-                // Like a real server: an existing uid.dat is kept (and a copied one would make it a duplicate world)
-                if (!new File(folder, "uid.dat").exists()) {
-                    Files.writeString(folder.toPath().resolve("uid.dat"), getUID().toString());
+                // A real server keeps the files that exist (imported world) and writes these on load.
+                // An existing world id is kept too, so a copied one would make the world a duplicate.
+                if (dimension) {
+                    Files.createDirectories(folder.toPath().resolve("data/paper"));
+                    writeIfMissing(new File(folder, "data/paper/level_overrides.dat"), "level of " + creator.name());
+                    writeIfMissing(new File(folder, "data/paper/metadata.dat"), getUID().toString());
+                } else {
+                    writeIfMissing(new File(folder, "level.dat"), "level of " + creator.name());
+                    Files.writeString(folder.toPath().resolve("session.lock"), "lock");
+                    writeIfMissing(new File(folder, "uid.dat"), getUID().toString());
                 }
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
+            }
+        }
+
+        private static void writeIfMissing(File file, String content) throws IOException {
+            if (!file.exists()) {
+                Files.writeString(file.toPath(), content);
             }
         }
 

@@ -68,6 +68,11 @@ public class CommandHandler implements CommandExecutor {
         }
         //////  CREATE
         if (args[0].equalsIgnoreCase("create")) {
+            if (args.length == 2) {
+                // No type given: default-world-type from config.yml (-11 unless changed)
+                String defaultType = CoManyWorld.getInstance().getConfig().getString("default-world-type", "-11").trim();
+                args = new String[]{args[0], args[1], defaultType};
+            }
             if (args.length < 3) {
                 sender.sendMessage(ChatColor.GOLD + "=== Many World > Create " + ChatColor.RESET +
                         "\n-11 [WORLD] " +
@@ -200,6 +205,7 @@ public class CommandHandler implements CommandExecutor {
             sender.sendMessage(ChatColor.GOLD + "=== Many World List > About \n" + ChatColor.RESET +
                     "Version >>> " + CoManyWorld.getInstance().getDescription().getVersion() + "\n" +
                     "Minecraft Server Version >>> " + Platform.describe() + "\n" +
+                    "World folders >>> " + WorldFolders.describe() + "\n" +
                     "->->->\n" +
                     "MC-OSOC \n" +
                     "github >>> https://github.com/MC-OSOC\n" +

@@ -1,0 +1,169 @@
+# Plays on real Paper and Spigot servers with the plugin installed:
+#  - the console creates flat / void / large / amplified / generator worlds and checks the terrain,
+#  - a bot (mineflayer) joins as an ordinary player to check the tp permissions,
+#  - the server is restarted to check that the world types are applied again when worlds are loaded.
+# The test itself is server-test/run.mjs; its results are also written to the job summary.
+# (server-test.yml does the console-only checks of create / backup / import / upgrade.)
+name: Gameplay test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gameplay-test-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Sent to the PaperMC download API, which asks clients to identify themselves.
+  USER_AGENT: CoManyWorld-CI (https://github.com/MC-OSOC/CoManyWorld)
+
+jobs:
+  paper:
+    name: Paper ${{ matrix.mc }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # mc = Minecraft version (the newest build of the newest x.y.z that starts with it is used),
+          # java = Java the server needs.
+          - mc: '1.21.11'
+            java: '21'
+          - mc: '26.1'
+            java: '25'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Build the plugin
+        run: mvn -B clean package
+
+      - name: Download Paper ${{ matrix.mc }}
+        env:
+          MC: ${{ matrix.mc }}
+        run: |
+          set -euo pipefail
+          api=https://fill.papermc.io/v3/projects/paper
+          curl -fsSL -A "$USER_AGENT" "$api" -o paper-project.json
+          version=$(jq -r --arg p "$MC" '
+            [.versions | .. | strings
+              | select(. == $p or (startswith($p + ".") and (ltrimstr($p + ".") | test("^[0-9]+$"))))]
+            | sort_by(split(".") | map(tonumber)) | last // empty' paper-project.json)
+          if [ -z "$version" ]; then
+            echo "::error::Paper has no version $MC"
+            head -c 2000 paper-project.json
+            exit 1
+          fi
+          echo "Paper version: $version"
+          curl -fsSL -A "$USER_AGENT" "$api/versions/$version/builds/latest" -o paper-build.json
+          url=$(jq -r '.downloads["server:default"].url' paper-build.json)
+          sha=$(jq -r '.downloads["server:default"].checksums.sha256' paper-build.json)
+          if [ -z "$url" ] || [ "$url" = null ]; then
+            echo "::error::No download in the build"
+            head -c 2000 paper-build.json
+            exit 1
+          fi
+          echo "Build: $(jq -r '"\(.id) (\(.channel))"' paper-build.json)"
+          curl -fsSL -A "$USER_AGENT" "$url" -o paper.jar
+          echo "$sha  paper.jar" | sha256sum -c -
+
+      - name: Install the test dependencies
+        working-directory: server-test
+        run: npm ci --no-audit --no-fund
+
+      # The server may need a newer Java than the one used for the build
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+
+      - name: Play on the server
+        working-directory: server-test
+        run: |
+          java -version
+          # mineflayer needs Node 22+; use the runner's Node when it is new enough
+          if [ "$(node -p 'process.versions.node.split(".")[0]')" -ge 22 ]; then run="node"; else run="npx --yes node@22"; fi
+          plugin=$(ls "$GITHUB_WORKSPACE"/target/CoManyWorld-*.jar | head -n 1)
+          $run run.mjs \
+            --server-jar "$GITHUB_WORKSPACE/paper.jar" \
+            --plugin-jar "$plugin" \
+            --mc "${{ matrix.mc }}" \
+            --label "Paper ${{ matrix.mc }}"
+
+      - name: Upload the server logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gameplay-logs-paper-${{ matrix.mc }}
+          path: |
+            server-test/work/logs/
+            server-test/work/crash-reports/
+            server-test/work/plugins/CoManyWorld/config.yml
+            buildtools/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  spigot:
+    name: Spigot ${{ matrix.mc }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        mc: ['1.21.11']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Build the plugin
+        run: mvn -B clean package
+
+      # Spigot is not distributed as a download: it is built from source with BuildTools
+      - name: Build Spigot ${{ matrix.mc }} with BuildTools
+        run: bash .github/scripts/build-spigot.sh "${{ matrix.mc }}" spigot.jar
+
+      - name: Install the test dependencies
+        working-directory: server-test
+        run: npm ci --no-audit --no-fund
+
+      - name: Play on the server
+        working-directory: server-test
+        run: |
+          java -version
+          if [ "$(node -p 'process.versions.node.split(".")[0]')" -ge 22 ]; then run="node"; else run="npx --yes node@22"; fi
+          plugin=$(ls "$GITHUB_WORKSPACE"/target/CoManyWorld-*.jar | head -n 1)
+          $run run.mjs \
+            --server-jar "$GITHUB_WORKSPACE/spigot.jar" \
+            --plugin-jar "$plugin" \
+            --mc "${{ matrix.mc }}" \
+            --label "Spigot ${{ matrix.mc }}"
+
+      - name: Upload the server logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gameplay-logs-spigot-${{ matrix.mc }}
+          path: |
+            server-test/work/logs/
+            server-test/work/crash-reports/
+            server-test/work/plugins/CoManyWorld/config.yml
+            buildtools/
+          if-no-files-found: ignore
+          retention-days: 7

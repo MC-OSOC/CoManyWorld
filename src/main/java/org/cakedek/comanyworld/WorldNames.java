@@ -3,8 +3,6 @@ package org.cakedek.comanyworld;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
 
-import java.io.File;
-import java.io.IOException;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
@@ -74,19 +72,5 @@ public final class WorldNames {
     public static World endOf(String prefix) {
         World world = Bukkit.getWorld(prefix + THE_END);
         return world != null ? world : Bukkit.getWorld(prefix + LEGACY_THE_END);
-    }
-
-    /**
-     * Returns the folder of a managed world, or null if the path would point outside
-     * the many_world folder (e.g. a hand-edited config containing "../").
-     */
-    public static File managedFolder(String worldName) {
-        try {
-            File root = new File(Bukkit.getWorldContainer(), ROOT).getCanonicalFile();
-            File folder = new File(Bukkit.getWorldContainer(), worldName).getCanonicalFile();
-            return folder.toPath().startsWith(root.toPath()) && !folder.equals(root) ? folder : null;
-        } catch (IOException e) {
-            return null;
-        }
     }
 }

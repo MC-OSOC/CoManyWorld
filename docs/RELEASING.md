@@ -1,11 +1,13 @@
 # การ build และออก Release ด้วย GitHub Actions
 
-repo นี้มี workflow 2 ตัวใน `.github/workflows/`
+repo นี้มี workflow 4 ตัวใน `.github/workflows/`
 
 | ไฟล์ | ทำงานเมื่อ | ทำอะไร |
 |---|---|---|
 | `ci.yml` | เปิด/อัปเดต Pull Request และ push เข้า `main` | รันเทสต์ (Paper API + MockBukkit) แล้ว build `.jar` (Spigot API) แนบไว้ในหน้า run ให้ดาวน์โหลดไปลองได้ 14 วัน |
 | `release.yml` | push tag เช่น `1.1.0_Preview` **หรือ** กดปุ่ม *Run workflow* ในแท็บ Actions | ตรวจว่า tag ตรงกับเวอร์ชันใน `pom.xml` → รันเทสต์ → build `.jar` → สร้างไฟล์ `.sha256` → เซ็นรับรองที่มาของไฟล์ (attestation) → สร้าง Release พร้อมแนบไฟล์ |
+| `server-test.yml` | push ที่แก้โค้ดปลั๊กอิน **หรือ** กด *Run workflow* แล้วใส่เวอร์ชัน (เช่น `26.3`, `1.21.11`) | เปิดเซิร์ฟเวอร์ Paper และ Spigot ของจริงบนเครื่อง GitHub (Java 25) ใส่ปลั๊กอิน แล้วพิมพ์คำสั่งใน console: create → list → backup → import → รีสตาร์ท (เช็กว่าโลกโหลดกลับมา) → delete → clear ถ้ามีขั้นไหนไม่ผ่านหรือปลั๊กอิน error จะขึ้นแดง ดู log ได้ในหน้า run |
+| `gameplay-test.yml` | เปิด/อัปเดต Pull Request, push เข้า `main` หรือกด *Run workflow* | เปิดเซิร์ฟเวอร์จริง (Paper 1.21.11, Paper 26.1, Spigot 1.21.11) แล้วสร้างโลก flat/void/large/amplified เช็กภูมิประเทศ ให้บอท [mineflayer](https://github.com/PrismarineJS/mineflayer) เข้าเล่นเป็นผู้เล่นทั่วไปเพื่อทดสอบสิทธิ์ `tp` แล้วรีสตาร์ตเพื่อเช็กว่าโลกโหลดกลับมาเป็นชนิดเดิม (โค้ดอยู่ใน `server-test/`) |
 
 ไฟล์ release ถูก build บนเครื่องของ GitHub จากโค้ดตรง tag นั้นเท่านั้น ไม่มีใครอัปโหลดไฟล์เองด้วยมือ
 

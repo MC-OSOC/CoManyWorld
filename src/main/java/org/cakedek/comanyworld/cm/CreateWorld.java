@@ -11,16 +11,21 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.cakedek.comanyworld.CoManyWorld;
+import org.cakedek.comanyworld.WorldFolders;
 import org.cakedek.comanyworld.WorldNames;
 import org.cakedek.comanyworld.WorldOptions;
 
-import java.io.File;
 import java.util.*;
 
 public class CreateWorld {
     private static final List<String> RESERVED_WORLD_NAMES = Arrays.asList("world", "world_nether", "world_the_end");
     /** Groups currently being created, so running the command twice can't create the same world twice. */
     private static final Set<String> IN_PROGRESS = new HashSet<>();
+
+    /** True while a world group is being created (main thread only). */
+    public static boolean isCreating(String groupName) {
+        return IN_PROGRESS.contains(groupName);
+    }
 
     ////// CREATE WORLD
     public static void createWorld(CommandSender sender, String requestedName, boolean createAll, int worldType, Long seed,
@@ -33,7 +38,8 @@ public class CreateWorld {
         String folderName = WorldNames.ROOT + worldName;
 
         // Check if the world already exists
-        if (RESERVED_WORLD_NAMES.contains(worldName) || worldExists(folderName) || IN_PROGRESS.contains(folderName)) {
+        if (RESERVED_WORLD_NAMES.contains(worldName) || worldExists(folderName) || IN_PROGRESS.contains(folderName)
+                || WorldImport.isImporting(folderName)) {
             sender.sendMessage(ChatColor.RED + "This world name is reserved or already exists. Please choose a different name.");
             return;
         }
@@ -107,9 +113,8 @@ public class CreateWorld {
     }
 
     private static boolean worldExists(String worldName) {
-        // Check if world folder exists
-        File worldFolder = new File(Bukkit.getWorldContainer(), worldName);
-        if (worldFolder.exists()) {
+        // Check if the group's folder exists, in the old place or in Paper 26.x's dimensions folder
+        if (WorldFolders.existsOnDisk(worldName)) {
             return true;
         }
         // Check if a world with this name is loaded or listed in the config
