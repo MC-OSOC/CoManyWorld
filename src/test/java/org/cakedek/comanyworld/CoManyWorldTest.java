@@ -5,6 +5,7 @@ import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.WorldCreator;
+import org.bukkit.WorldType;
 import org.bukkit.command.Command;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.event.player.PlayerPortalEvent;
@@ -573,7 +574,10 @@ class CoManyWorldTest extends TestBase {
         assertFalse(delete.contains("world"), "server worlds are not offered for deletion");
         assertEquals(List.of("somemap"), completer.onTabComplete(console, command, "co-many", new String[]{"import", ""}));
         assertEquals(List.of("confirm"), completer.onTabComplete(console, command, "co-many", new String[]{"clear", ""}));
-        assertEquals(List.of("-all"), completer.onTabComplete(console, command, "co-many", new String[]{"create", "x", "-a"}));
+        assertEquals(List.of("-all", "-amplified"), completer.onTabComplete(console, command, "co-many", new String[]{"create", "x", "-a"}));
+        assertEquals(List.of("-flat"), completer.onTabComplete(console, command, "co-many", new String[]{"create", "x", "-f"}));
+        assertEquals(List.of("-void"), completer.onTabComplete(console, command, "co-many", new String[]{"create", "x", "-v"}));
+        assertEquals(List.of("-large"), completer.onTabComplete(console, command, "co-many", new String[]{"create", "x", "-l"}));
         assertEquals(List.of(), completer.onTabComplete(console, command, "co-many", new String[]{"about", ""}));
     }
 
@@ -582,5 +586,232 @@ class CoManyWorldTest extends TestBase {
         String out = run("co-many about");
         assertTrue(out.contains(plugin.getDescription().getVersion()), out);
         assertTrue(run("co-many").contains("/co-many create"));
+    }
+
+    // ---------------------------------------------------------------- permissions: tp
+
+    @Test
+    void playersWithoutPermissionCannotTeleport() {
+        createAll("test");
+        PlayerMock player = server.addPlayer();
+        drain(player);
+        player.performCommand("co-many tp many_world/test/world");
+        server.getScheduler().performTicks(1);
+        assertTrue(joined(drain(player)).contains("permission"));
+        assertNotEquals("many_world/test/world", player.getWorld().getName());
+    }
+
+    @Test
+    void tpPermissionAllowsAllWorlds() {
+        createAll("test");
+        PlayerMock player = server.addPlayer();
+        player.addAttachment(plugin, "co.many.worlds.tp", true);
+        drain(player);
+        player.performCommand("co-many tp many_world/test/world_nether");
+        server.getScheduler().performTicks(1);
+        assertEquals("many_world/test/world_nether", player.getWorld().getName());
+    }
+
+    @Test
+    void tpPermissionCanBeGivenPerWorld() {
+        createAll("test");
+        PlayerMock player = server.addPlayer();
+        player.addAttachment(plugin, "co.many.worlds.tp.many_world/test/world_nether", true);
+        drain(player);
+
+        player.performCommand("co-many tp many_world/test/world");
+        server.getScheduler().performTicks(1);
+        assertTrue(joined(drain(player)).contains("permission"));
+        assertNotEquals("many_world/test/world", player.getWorld().getName());
+
+        player.performCommand("co-many tp many_world/test/world_nether");
+        server.getScheduler().performTicks(1);
+        assertEquals("many_world/test/world_nether", player.getWorld().getName());
+    }
+
+    @Test
+    void tpOnlyPlayersCannotUseAdminCommands() {
+        createAll("test");
+        PlayerMock player = server.addPlayer();
+        player.addAttachment(plugin, "co.many.worlds.tp", true);
+        drain(player);
+
+        for (String command : List.of("co-many create sneaky -11", "co-many list", "co-many delete many_world/test/world",
+                "co-many backup world", "co-many import x", "co-many about", "co-many clear confirm")) {
+            player.performCommand(command);
+            assertTrue(joined(drain(player)).contains("permission"), command);
+        }
+        server.getScheduler().performTicks(3);
+        assertNull(Bukkit.getWorld("many_world/sneaky/world"));
+        assertNotNull(Bukkit.getWorld("many_world/test/world"));
+
+        // The help only lists what they may use
+        player.performCommand("co-many");
+        String help = joined(drain(player));
+        assertTrue(help.contains("/co-many tp"), help);
+        assertFalse(help.contains("/co-many create"), help);
+    }
+
+    @Test
+    void playersWithoutAnyPermissionGetNoHelp() {
+        PlayerMock player = server.addPlayer();
+        drain(player);
+        player.performCommand("co-many");
+        String out = joined(drain(player));
+        assertTrue(out.contains("permission"), out);
+        assertFalse(out.contains("/co-many create"), out);
+    }
+
+    @Test
+    void tabCompleteOnlyOffersWhatThePlayerMayUse() {
+        createAll("test");
+        CommandCompleter completer = new CommandCompleter();
+        Command command = plugin.getCommand("co-many");
+
+        PlayerMock nobody = server.addPlayer();
+        assertEquals(List.of(), completer.onTabComplete(nobody, command, "co-many", new String[]{""}));
+
+        PlayerMock oneWorld = server.addPlayer();
+        oneWorld.addAttachment(plugin, "co.many.worlds.tp.many_world/test/world_nether", true);
+        assertEquals(List.of("tp"), completer.onTabComplete(oneWorld, command, "co-many", new String[]{""}));
+        assertEquals(List.of("many_world/test/world_nether"),
+                completer.onTabComplete(oneWorld, command, "co-many", new String[]{"tp", "many"}));
+        assertEquals(List.of(), completer.onTabComplete(oneWorld, command, "co-many", new String[]{"create", "x", "-"}));
+
+        PlayerMock allWorlds = server.addPlayer();
+        allWorlds.addAttachment(plugin, "co.many.worlds.tp", true);
+        assertTrue(completer.onTabComplete(allWorlds, command, "co-many", new String[]{"tp", "many_world/test/"}).size() >= 3);
+    }
+
+    // ---------------------------------------------------------------- world types
+
+    @Test
+    void worldOptionsConfigureTheWorldCreator() {
+        WorldCreator flat = new WorldCreator("a");
+        new WorldOptions(WorldOptions.Kind.FLAT, null).applyTo(flat);
+        assertEquals(WorldType.FLAT, flat.type());
+
+        WorldCreator large = new WorldCreator("b");
+        new WorldOptions(WorldOptions.Kind.LARGE, null).applyTo(large);
+        assertEquals(WorldType.LARGE_BIOMES, large.type());
+
+        WorldCreator amplified = new WorldCreator("c");
+        new WorldOptions(WorldOptions.Kind.AMPLIFIED, null).applyTo(amplified);
+        assertEquals(WorldType.AMPLIFIED, amplified.type());
+
+        WorldCreator empty = new WorldCreator("d");
+        new WorldOptions(WorldOptions.Kind.VOID, null).applyTo(empty);
+        assertInstanceOf(VoidGenerator.class, empty.generator());
+        assertFalse(empty.generateStructures());
+
+        WorldCreator normal = new WorldCreator("e");
+        WorldOptions.defaults().applyTo(normal);
+        assertEquals(WorldType.NORMAL, normal.type());
+        assertNull(normal.generator());
+    }
+
+    @Test
+    void worldOptionsAreKeptInConfigYml() throws Exception {
+        YamlConfiguration config = new YamlConfiguration();
+        new WorldOptions(WorldOptions.Kind.VOID, null).save(config, "many_world/a/world");
+        new WorldOptions(WorldOptions.Kind.NORMAL, "MyGen:fancy").save(config, "many_world/b/world");
+        new WorldOptions(WorldOptions.Kind.NORMAL, null).save(config, "many_world/c/world");
+
+        YamlConfiguration reloaded = new YamlConfiguration();
+        reloaded.loadFromString(config.saveToString());
+        assertEquals(WorldOptions.Kind.VOID, WorldOptions.load(reloaded, "many_world/a/world").kind());
+        WorldOptions generated = WorldOptions.load(reloaded, "many_world/b/world");
+        assertEquals(WorldOptions.Kind.NORMAL, generated.kind());
+        assertEquals("MyGen:fancy", generated.generator());
+        assertEquals("MyGen", generated.generatorPlugin());
+        assertTrue(WorldOptions.load(reloaded, "many_world/c/world").isDefault(), "default worlds don't need an entry");
+        assertNull(reloaded.get("world-settings.many_world/c/world"));
+        assertTrue(WorldOptions.load(reloaded, "never/saved").isDefault());
+
+        WorldOptions.remove(reloaded, "many_world/a/world");
+        assertTrue(WorldOptions.load(reloaded, "many_world/a/world").isDefault());
+
+        // An unknown type (e.g. from a newer version) falls back to a normal world
+        reloaded.set("world-settings.many_world/d/world.type", "rainbow");
+        assertTrue(WorldOptions.load(reloaded, "many_world/d/world").isDefault());
+    }
+
+    @Test
+    void voidGeneratorSpawnsOnItsPlatform() {
+        Location spawn = new VoidGenerator().getFixedSpawnLocation(Bukkit.getWorld("world"), new Random());
+        assertEquals(8.5, spawn.getX());
+        assertEquals(64, spawn.getY());
+        assertEquals(8.5, spawn.getZ());
+    }
+
+    @Test
+    void createFlatVoidLargeAndAmplifiedWorlds() {
+        for (String type : List.of("flat", "void", "large", "amplified")) {
+            String out = run("co-many create " + type + "1 -11 -" + type);
+            assertFalse(out.contains("Invalid"), out);
+            server.getScheduler().performTicks(3);
+            String key = "many_world/" + type + "1/world";
+            assertNotNull(Bukkit.getWorld(key), type);
+            assertEquals(type, plugin.getConfig().getString("world-settings." + key + ".type"));
+            assertTrue(configWorlds().contains(key));
+        }
+    }
+
+    @Test
+    void createReportsTheWorldType() {
+        run("co-many create lobby -11 -void");
+        server.getScheduler().performTicks(3);
+        assertTrue(joined(drain(console)).contains("Type: void"));
+    }
+
+    @Test
+    void normalWorldsHaveNoWorldSettings() {
+        run("co-many create plain -11");
+        server.getScheduler().performTicks(3);
+        assertNotNull(Bukkit.getWorld("many_world/plain/world"));
+        assertNull(plugin.getConfig().get("world-settings"));
+    }
+
+    @Test
+    void typeFlagOnlyChangesTheOverworldOfAnAllWorld() {
+        run("co-many create combo -all -flat");
+        server.getScheduler().performTicks(5);
+        assertEquals("flat", plugin.getConfig().getString("world-settings.many_world/combo/world.type"));
+        assertNull(plugin.getConfig().get("world-settings.many_world/combo/world_nether"));
+        assertNull(plugin.getConfig().get("world-settings.many_world/combo/world_the_end"));
+        assertNotNull(Bukkit.getWorld("many_world/combo/world_nether"));
+        assertNotNull(Bukkit.getWorld("many_world/combo/world_the_end"));
+    }
+
+    @Test
+    void createRejectsBadWorldTypeFlags() {
+        assertTrue(run("co-many create a -11 -flat -void").contains("only one"));
+        assertTrue(run("co-many create b -11 -flat -gCoManyWorld").contains("only one"));
+        assertTrue(run("co-many create c -12 -flat").contains("overworld"));
+        assertTrue(run("co-many create d -13 -void").contains("overworld"));
+        assertTrue(run("co-many create e -11 -gNoSuchPlugin").contains("not installed"));
+        assertTrue(run("co-many create f -11 -g").contains("Usage"));
+        server.getScheduler().performTicks(5);
+        assertEquals(3, Bukkit.getWorlds().size(), "no world may have been created");
+        assertNull(plugin.getConfig().get("world-settings"));
+    }
+
+    @Test
+    void createWithGeneratorPluginKeepsTheGeneratorName() {
+        String out = run("co-many create gen -11 -gCoManyWorld:fancy");
+        assertFalse(out.contains("not installed"), out);
+        server.getScheduler().performTicks(3);
+        assertNotNull(Bukkit.getWorld("many_world/gen/world"));
+        assertEquals("CoManyWorld:fancy", plugin.getConfig().getString("world-settings.many_world/gen/world.generator"));
+    }
+
+    @Test
+    void deletingAWorldForgetsItsWorldSettings() {
+        run("co-many create lobby -11 -void");
+        server.getScheduler().performTicks(3);
+        assertNotNull(plugin.getConfig().get("world-settings.many_world/lobby/world"));
+        String out = run("co-many delete many_world/lobby/world");
+        assertTrue(out.contains("marked for deletion"), out);
+        assertNull(plugin.getConfig().get("world-settings.many_world/lobby/world"));
     }
 }

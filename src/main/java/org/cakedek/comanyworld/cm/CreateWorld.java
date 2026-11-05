@@ -13,6 +13,7 @@ import org.bukkit.scheduler.BukkitRunnable;
 import org.cakedek.comanyworld.CoManyWorld;
 import org.cakedek.comanyworld.WorldFolders;
 import org.cakedek.comanyworld.WorldNames;
+import org.cakedek.comanyworld.WorldOptions;
 
 import java.util.*;
 
@@ -27,7 +28,8 @@ public class CreateWorld {
     }
 
     ////// CREATE WORLD
-    public static void createWorld(CommandSender sender, String requestedName, boolean createAll, int worldType, Long seed) {
+    public static void createWorld(CommandSender sender, String requestedName, boolean createAll, int worldType, Long seed,
+                                   WorldOptions options) {
         String worldName = WorldNames.sanitize(requestedName);
         if (worldName == null) {
             sender.sendMessage(ChatColor.RED + "Invalid world name. Use only letters, numbers, '_' and '-' (max 48).");
@@ -71,7 +73,7 @@ public class CreateWorld {
             public void run() {
                 if (pending.hasNext()) {
                     Map.Entry<String, World.Environment> next = pending.next();
-                    if (createWorldWithEnvironment(next.getKey(), next.getValue(), seed)) {
+                    if (createWorldWithEnvironment(next.getKey(), next.getValue(), seed, options)) {
                         created.add(next.getKey());
                     } else {
                         sender.sendMessage(ChatColor.RED + "Failed to create world " + next.getKey());
@@ -87,8 +89,11 @@ public class CreateWorld {
                 if (created.isEmpty()) {
                     return;
                 }
+                String overworldKey = folderName + "/" + WorldNames.OVERWORLD;
+                boolean hasOptions = created.contains(overworldKey) && !options.isDefault();
                 sender.sendMessage(ChatColor.GREEN + "World " + worldName + " created: " + String.join(", ", created)
-                        + (seed != null ? " Seed: " + seed : ""));
+                        + (seed != null ? " Seed: " + seed : "")
+                        + (hasOptions ? " Type: " + options.describe() : ""));
 
                 // ADD WORLD TO CONFIG.YML
                 List<String> worlds = CoManyWorld.getInstance().getConfig().getStringList("worlds");
@@ -98,6 +103,10 @@ public class CreateWorld {
                     }
                 }
                 CoManyWorld.getInstance().getConfig().set("worlds", worlds);
+                if (hasOptions) {
+                    // Needed again every time the world is loaded on startup
+                    options.save(CoManyWorld.getInstance().getConfig(), overworldKey);
+                }
                 CoManyWorld.getInstance().saveConfig();
             }
         }.runTaskTimer(CoManyWorld.getInstance(), 1L, 1L);
@@ -117,9 +126,14 @@ public class CreateWorld {
                 .anyMatch(name -> name.equalsIgnoreCase(worldName) || name.toLowerCase(Locale.ROOT).startsWith(prefix));
     }
 
-    private static boolean createWorldWithEnvironment(String worldName, World.Environment environment, Long seed) {
+    private static boolean createWorldWithEnvironment(String worldName, World.Environment environment, Long seed,
+                                                      WorldOptions options) {
         WorldCreator worldCreator = new WorldCreator(worldName);
         worldCreator.environment(environment);
+        if (environment == World.Environment.NORMAL) {
+            // flat / void / large / amplified / custom generator only change the overworld
+            options.applyTo(worldCreator);
+        }
         if (seed != null) {
             worldCreator.seed(seed);
         }

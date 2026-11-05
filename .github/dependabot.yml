@@ -6,3 +6,8 @@ updates:
     directory: /
     schedule:
       interval: monthly
+  # mineflayer, the bot used by the real-server test (server-test/); new Minecraft versions need a newer one
+  - package-ecosystem: npm
+    directory: /server-test
+    schedule:
+      interval: monthly

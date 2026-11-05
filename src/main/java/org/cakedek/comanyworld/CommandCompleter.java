@@ -14,17 +14,30 @@ import java.util.stream.Stream;
 public class CommandCompleter implements TabCompleter {
 
     private static final List<String> COMMANDS = Arrays.asList("create", "tp", "list", "delete", "about", "import", "backup", "clear");
-    private static final List<String> WORLD_TYPES = Arrays.asList("-11", "-12", "-13", "-all", "-s");
+    private static final List<String> WORLD_TYPES = Arrays.asList("-11", "-12", "-13", "-all", "-flat", "-void", "-large", "-amplified", "-s", "-g");
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
+        boolean admin = sender.hasPermission(CommandHandler.PERM_ADMIN);
         if (args.length == 1) {
-            return filter(COMMANDS.stream(), args[0]);
+            if (admin) {
+                return filter(COMMANDS.stream(), args[0]);
+            }
+            // Without admin only tp (and clear, which has its own permission) can be used
+            Stream<String> allowed = COMMANDS.stream().filter(name ->
+                    (name.equals("tp") && CommandHandler.canUseTp(sender))
+                            || (name.equals("clear") && sender.hasPermission(CommandHandler.PERM_CLEAR)));
+            return filter(allowed, args[0]);
         }
         String sub = args[0].toLowerCase(Locale.ROOT);
+        if (!admin && !(sub.equals("tp") || sub.equals("clear"))) {
+            return Collections.emptyList();
+        }
         if (args.length == 2) {
             switch (sub) {
                 case "tp":
+                    return filter(Bukkit.getWorlds().stream().map(World::getName)
+                            .filter(name -> CommandHandler.canTeleportTo(sender, name)), args[1]);
                 case "backup":
                     return filter(Bukkit.getWorlds().stream().map(World::getName), args[1]);
                 case "delete":
