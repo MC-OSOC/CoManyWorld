@@ -52,7 +52,8 @@ public class CommandHandler implements CommandExecutor {
             boolean clear = args.length >= 1 && args[0].equalsIgnoreCase("clear");
             boolean tp = args.length >= 1 && args[0].equalsIgnoreCase("tp");
             if (!clear && !tp) {
-                if (canUseTp(sender)) {
+                if (args.length == 0 && canUseTp(sender)) {
+                    // Plain /co-many: only list what they may use
                     sender.sendMessage(ChatColor.GOLD + "=== Many World \n" + ChatColor.RESET +
                             ChatColor.YELLOW + "/co-many tp [worldName] " + ChatColor.RESET + ">> tp to world");
                 } else {
