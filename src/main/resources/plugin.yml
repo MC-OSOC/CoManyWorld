@@ -10,7 +10,8 @@ commands:
   co-many:
     description: Commands for managing multiple worlds
     usage: /co-many <create|tp|list|delete|import|backup|clear|about> [worldName] [worldType]
-    permission: co.many.worlds.admin
+    # No command-level permission: the plugin checks co.many.worlds.admin itself so that
+    # co.many.worlds.tp (or co.many.worlds.tp.<world>) can be given to players without admin.
   co-many-clear:
     description: Permanently delete the worlds waiting in delete_worlds.yml
     usage: /co-many-clear [confirm]
@@ -18,6 +19,11 @@ commands:
 permissions:
   co.many.worlds.admin:
     description: Allows admin to manage worlds (create, tp, list, import, backup, about)
+    default: op
+    children:
+      co.many.worlds.tp: true
+  co.many.worlds.tp:
+    description: Allows /co-many tp to any world. To allow a single world, give co.many.worlds.tp.<world name> instead (e.g. co.many.worlds.tp.many_world/lobby/world)
     default: op
   co.many.worlds.admindel:
     description: Allows admin to delete worlds (move them to the trash)

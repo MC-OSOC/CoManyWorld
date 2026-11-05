@@ -9,6 +9,7 @@ import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.cakedek.comanyworld.CoManyWorld;
 import org.cakedek.comanyworld.WorldNames;
+import org.cakedek.comanyworld.WorldOptions;
 
 import java.io.File;
 import java.io.IOException;
@@ -89,6 +90,7 @@ public class WorldDelete {
         // Remove from config.yml
         configWorlds.removeIf(name -> worldsToDelete.stream().anyMatch(name::equalsIgnoreCase));
         CoManyWorld.getInstance().getConfig().set("worlds", configWorlds);
+        worldsToDelete.forEach(name -> WorldOptions.remove(CoManyWorld.getInstance().getConfig(), name));
         CoManyWorld.getInstance().saveConfig();
 
         // Add to delete_worlds.yml

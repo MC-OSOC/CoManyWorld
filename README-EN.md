@@ -8,7 +8,8 @@ co-many-world is a plugin for **Spigot and Paper** servers running Minecraft 1.2
 ## Features
 
 - Easily create new worlds with commands
-- Quickly teleport between different worlds
+- Quickly teleport between different worlds (regular players can use it too, with per-world permissions)
+- Several world types: normal, flat, void (empty), large biomes, amplified, or a generator from another plugin
 - Delete unwanted worlds
 - List created worlds
 - Import worlds from ZIP files or folders
@@ -34,12 +35,23 @@ Releases are built by GitHub Actions: see [docs/RELEASING.md](docs/RELEASING.md)
 ## Commands
 
 #### Create a new world
-`/co-many create <worldName> [-11|-12|-13|-all]`
+`/co-many create <worldName> [-11|-12|-13|-all] [-s<seed>] [-flat|-void|-large|-amplified|-g<plugin[:id]>]`
 - `-11` : Normal world (default)
 - `-12` : Nether world
 - `-13` : The End world
 - `-all`: Create all world types
-- `-s` : Seed world
+- `-s<seed>` : Seed world
+
+World type (pick one; only for the overworld, so use it with `-11` or `-all` — the Nether / End of an `-all` world are always normal):
+- `-flat` : Flat world
+- `-void` : Empty world with a small 3x3 stone platform to stand on (lobbies / mini-games)
+- `-large` : Large Biomes
+- `-amplified` : Amplified
+- `-g<plugin[:id]>` : Use a generator from another plugin, e.g. `-gMyGenerator` or `-gMyGenerator:lobby` (that plugin must be installed and enabled)
+
+Examples: `/co-many create lobby -11 -void` and `/co-many create survival -all -s12345 -large`
+
+The world type is saved in `config.yml` (section `world-settings`) so the world is loaded the same way every time the server starts, and it is removed when the world is deleted.
 
 #### Basic commands
 - **Teleport to a world**: `/co-many tp <worldName>`
@@ -72,9 +84,13 @@ Releases are built by GitHub Actions: see [docs/RELEASING.md](docs/RELEASING.md)
 
 | Permissions             | Command                                                                                         | Properties                                                |
 |-------------------------|-------------------------------------------------------------------------------------------------|-----------------------------------------------------------|
-| co.many.worlds.admin    | /co-many create <br/>/co-many tp <br/> /co-many list <br/> /co-many import <br/> /co-many about <br/> /co-many backup | Permission to manage worlds (create, teleport, list, import, backup) |
+| co.many.worlds.admin    | /co-many create <br/>/co-many tp <br/> /co-many list <br/> /co-many import <br/> /co-many about <br/> /co-many backup | Permission to manage worlds (create, teleport, list, import, backup). Includes `co.many.worlds.tp` |
+| co.many.worlds.tp       | /co-many tp <worldName>                                                                         | Permission to teleport to every world (no admin needed). Default: op |
+| co.many.worlds.tp.&lt;world name&gt; | /co-many tp &lt;world name&gt;                                                       | Permission to teleport to that one world, e.g. `co.many.worlds.tp.many_world/lobby/world` |
 | co.many.worlds.admindel | /co-many delete <worldName>                                                                     | Permission to delete worlds                                |
 | co.many.worlds.adminclear | /co-many clear, /co-many-clear                                                                                | Permission to permanently delete worlds                    |
+
+To let regular players teleport to a lobby, give them `co.many.worlds.tp.many_world/lobby/world` (with LuckPerms or another permissions plugin). Worlds a player may not enter are hidden from their tab-complete, and every other `/co-many` command stays admin-only.
 
 ## Configuration
 
@@ -91,6 +107,9 @@ default-nether-world: 'world_nether'
 default-end-world: 'world_the_end'
 worlds: []   # List of worlds to be loaded on startup (managed by the plugin)
 prevent-single-world-portals: true  # Prevent portal usage in worlds that don't have all 3 dimensions
+# world-settings:   # added by the plugin when a world is created with -flat / -void / -large / -amplified / -g
+#   many_world/lobby/world:
+#     type: void
 ```
 
 The `delete_worlds.yml` file stores the names of worlds that have been removed from `config.yml` and are waiting for permanent deletion:

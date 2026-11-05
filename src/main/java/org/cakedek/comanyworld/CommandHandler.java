@@ -7,18 +7,38 @@ import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
+import org.bukkit.plugin.Plugin;
 import org.cakedek.comanyworld.cm.*;
+
+import java.util.Locale;
 
 public class CommandHandler implements CommandExecutor {
 
+    static final String PERM_ADMIN = "co.many.worlds.admin";
     static final String PERM_DELETE = "co.many.worlds.admindel";
     static final String PERM_CLEAR = "co.many.worlds.adminclear";
+    /** Teleport to any world. A single world is allowed with {@code co.many.worlds.tp.<world name>}. */
+    static final String PERM_TP = "co.many.worlds.tp";
+
+    /** True if the sender may teleport to this world (all worlds, or this one). */
+    static boolean canTeleportTo(CommandSender sender, String worldName) {
+        return sender.hasPermission(PERM_TP) || sender.hasPermission(PERM_TP + "." + worldName);
+    }
+
+    /** True if the sender may teleport to at least one world, so /co-many tp is worth showing. */
+    static boolean canUseTp(CommandSender sender) {
+        if (sender.hasPermission(PERM_TP)) {
+            return true;
+        }
+        return sender.getEffectivePermissions().stream()
+                .anyMatch(info -> info.getValue() && info.getPermission().startsWith(PERM_TP + "."));
+    }
 
     // COMMAND IN
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         String se = ChatColor.GOLD + "=== Many World \n" + ChatColor.RESET +
-                ChatColor.YELLOW + "/co-many create [worldName] [-11|-12|-13|-all] [-s<seed>] " + ChatColor.RESET + ">> Create a new world\n" +
+                ChatColor.YELLOW + "/co-many create [worldName] [-11|-12|-13|-all] [-s<seed>] [-flat|-void|-large|-amplified|-g<plugin[:id]>] " + ChatColor.RESET + ">> Create a new world\n" +
                 ChatColor.YELLOW + "/co-many list " + ChatColor.RESET + ">> world list \n" +
                 ChatColor.YELLOW + "/co-many tp [worldName] " + ChatColor.RESET + ">> tp to world\n" +
                 ChatColor.YELLOW + "/co-many import [worldName] " + ChatColor.RESET + ">> Import World \n" +
@@ -26,6 +46,21 @@ public class CommandHandler implements CommandExecutor {
                 ChatColor.YELLOW + "/co-many clear [confirm] " + ChatColor.RESET + ">> Clear the permanent trash world\n" +
                 ChatColor.YELLOW + "/co-many backup [worldName] " + ChatColor.RESET + ">> Backup world\n" +
                 ChatColor.YELLOW + "/co-many about " + ChatColor.RESET + ">> About \n";
+        boolean admin = sender.hasPermission(PERM_ADMIN);
+        if (!admin) {
+            // Everyone else may only use /co-many tp (and /co-many clear with its own permission)
+            boolean clear = args.length >= 1 && args[0].equalsIgnoreCase("clear");
+            boolean tp = args.length >= 1 && args[0].equalsIgnoreCase("tp");
+            if (!clear && !tp) {
+                if (canUseTp(sender)) {
+                    sender.sendMessage(ChatColor.GOLD + "=== Many World \n" + ChatColor.RESET +
+                            ChatColor.YELLOW + "/co-many tp [worldName] " + ChatColor.RESET + ">> tp to world");
+                } else {
+                    sender.sendMessage(ChatColor.RED + "You don't have permission to use this command.");
+                }
+                return true;
+            }
+        }
         if (args.length == 0) {
             sender.sendMessage(se);
             return true;
@@ -39,7 +74,13 @@ public class CommandHandler implements CommandExecutor {
                         "\n-13 [THE_END] " +
                         "\n-all [ALL_WORLD]" +
                         "\n-s<seed> [SEED]" +
-                        "\nCommand: /co-many create <worldName> [-11|-12|-13|-all] [-s<seed>]");
+                        "\nOverworld only (pick one):" +
+                        "\n-flat [FLAT] " +
+                        "\n-void [EMPTY WORLD WITH A SMALL PLATFORM] " +
+                        "\n-large [LARGE BIOMES] " +
+                        "\n-amplified [AMPLIFIED] " +
+                        "\n-g<plugin[:id]> [GENERATOR FROM ANOTHER PLUGIN]" +
+                        "\nCommand: /co-many create <worldName> [-11|-12|-13|-all] [-s<seed>] [-flat|-void|-large|-amplified|-g<plugin[:id]>]");
                 return true;
             }
 
@@ -47,10 +88,30 @@ public class CommandHandler implements CommandExecutor {
             boolean createAll = false;
             int worldType = -11;
             Long seed = null;
+            WorldOptions.Kind kind = WorldOptions.Kind.NORMAL;
+            String generator = null;
+            boolean overworldFlag = false; // one of -flat / -void / -large / -amplified / -g was given
 
             for (int i = 2; i < args.length; i++) {
                 String arg = args[i];
-                if (arg.equalsIgnoreCase("-all")) {
+                WorldOptions.Kind flagKind = WorldOptions.kindOfFlag(arg);
+                if (flagKind != null || arg.toLowerCase(Locale.ROOT).startsWith("-g")) {
+                    if (overworldFlag) {
+                        sender.sendMessage(ChatColor.RED + "Use only one of -flat, -void, -large, -amplified or -g<plugin[:id]>.");
+                        return true;
+                    }
+                    overworldFlag = true;
+                    if (flagKind != null) {
+                        kind = flagKind;
+                    } else {
+                        generator = arg.substring(2);
+                        String error = checkGenerator(generator);
+                        if (error != null) {
+                            sender.sendMessage(ChatColor.RED + error);
+                            return true;
+                        }
+                    }
+                } else if (arg.equalsIgnoreCase("-all")) {
                     createAll = true;
                 } else if (arg.startsWith("-s")) {
                     try {
@@ -67,7 +128,12 @@ public class CommandHandler implements CommandExecutor {
                 }
             }
 
-            CreateWorld.createWorld(sender, worldName, createAll, worldType, seed);
+            if (overworldFlag && !createAll && worldType != -11) {
+                sender.sendMessage(ChatColor.RED + "-flat, -void, -large, -amplified and -g only change the overworld: "
+                        + "use them with -11 or -all.");
+                return true;
+            }
+            CreateWorld.createWorld(sender, worldName, createAll, worldType, seed, new WorldOptions(kind, generator));
             return true;
         }
         //////  TP
@@ -145,11 +211,29 @@ public class CommandHandler implements CommandExecutor {
     }
 
 
+    /** Error text if "-g<plugin[:id]>" can't be used, or null if the generator plugin is available. */
+    private static String checkGenerator(String generator) {
+        String pluginName = generator.split(":", 2)[0];
+        if (pluginName.isEmpty()) {
+            return "Usage: -g<plugin[:id]>, for example -gMyGenerator or -gMyGenerator:flat";
+        }
+        Plugin plugin = Bukkit.getPluginManager().getPlugin(pluginName);
+        if (plugin == null || !plugin.isEnabled()) {
+            return "Generator plugin '" + pluginName + "' is not installed or not enabled.";
+        }
+        return null;
+    }
+
     // วาร์ปผู้เล่นไปยังโลกที่สร้างไว่้
     private void teleportPlayer(Player player, String worldName) {
         World world = Bukkit.getWorld(worldName);
         if (world == null) {
             player.sendMessage(ChatColor.RED + "World " + ChatColor.WHITE + worldName + ChatColor.RED + " does not exist.");
+            return;
+        }
+        if (!canTeleportTo(player, world.getName())) {
+            player.sendMessage(ChatColor.RED + "You don't have permission to teleport to " + ChatColor.WHITE
+                    + world.getName() + ChatColor.RED + ".");
             return;
         }
         Platform.teleport(player, world.getSpawnLocation()).thenAccept(success -> {

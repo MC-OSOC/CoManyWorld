@@ -8,7 +8,8 @@ co-many-world เป็นปลั๊กอินสำหรับเซิร
 ## คุณสมบัติ
 
 - สร้างโลกใหม่ได้ง่ายดายด้วยคำสั่ง
-- วาร์ปไปยังโลกต่าง ๆ ได้อย่างรวดเร็ว
+- วาร์ปไปยังโลกต่าง ๆ ได้อย่างรวดเร็ว (ให้ผู้เล่นทั่วไปใช้ได้ และกำหนดสิทธิ์รายโลกได้)
+- สร้างโลกได้หลายแบบ: ปกติ, Flat, Void (โลกว่าง), Large Biomes, Amplified หรือใช้ generator จากปลั๊กอินอื่น
 - ลบโลกที่ไม่ต้องการ
 - แสดงรายชื่อโลกที่สร้างไว้
 - นำเข้าโลกจากไฟล์ ZIP หรือโฟลเดอร์
@@ -34,12 +35,23 @@ mvn package
 ## คำสั่ง
 
 #### สร้างโลกใหม่
-`/co-many create <worldName> [-11|-12|-13|-all]`
+`/co-many create <worldName> [-11|-12|-13|-all] [-s<seed>] [-flat|-void|-large|-amplified|-g<plugin[:id]>]`
 - `-11` : โลกปกติ (ค่าเริ่มต้น)
 - `-12` : โลกนรก (Nether)
 - `-13` : โลก The End
 - `-all`: สร้างโลกทั้งหมด
-- `-s` : Seed
+- `-s<seed>` : Seed
+
+ชนิดของโลก (เลือกได้อย่างเดียว ใช้กับโลกปกติ `-11` หรือ `-all` เท่านั้น Nether / End ใน `-all` ยังสร้างแบบปกติ):
+- `-flat` : โลกแบนราบ
+- `-void` : โลกว่างเปล่า มีแท่นหิน 3x3 ให้ยืน (เหมาะกับ lobby / มินิเกม)
+- `-large` : Large Biomes
+- `-amplified` : Amplified
+- `-g<plugin[:id]>` : ใช้ generator จากปลั๊กอินอื่น เช่น `-gMyGenerator` หรือ `-gMyGenerator:lobby` (ปลั๊กอินนั้นต้องติดตั้งและเปิดใช้งานอยู่)
+
+ตัวอย่าง: `/co-many create lobby -11 -void` และ `/co-many create survival -all -s12345 -large`
+
+ชนิดของโลกจะถูกบันทึกไว้ใน `config.yml` (หัวข้อ `world-settings`) เพื่อให้โหลดโลกแบบเดิมทุกครั้งที่เปิดเซิร์ฟเวอร์ และจะถูกลบออกเมื่อลบโลก
 
 #### คำสั่งพื้นฐาน
 - **วาร์ปไปยังโลก**: `/co-many tp <worldName>`
@@ -72,9 +84,13 @@ mvn package
 
 | Permissions             | Command                                                                                         | Properties                                                |
 |-------------------------|-------------------------------------------------------------------------------------------------|-----------------------------------------------------------|
-| co.many.worlds.admin    | /co-many create <br/>/co-many tp <br/> /co-many list <br/> /co-many import <br/> /co-many about <br/> /co-many backup | สิทธิ์ในการจัดการโลก (สร้าง, วาร์ป, รายชื่อโลก, นำเข้าโลก, สำรองข้อมูลโลก) |
+| co.many.worlds.admin    | /co-many create <br/>/co-many tp <br/> /co-many list <br/> /co-many import <br/> /co-many about <br/> /co-many backup | สิทธิ์ในการจัดการโลก (สร้าง, วาร์ป, รายชื่อโลก, นำเข้าโลก, สำรองข้อมูลโลก) รวมสิทธิ์ `co.many.worlds.tp` ด้วย |
+| co.many.worlds.tp       | /co-many tp <worldName>                                                                         | สิทธิ์วาร์ปไปทุกโลก (ไม่ต้องเป็น admin) ค่าเริ่มต้น: op |
+| co.many.worlds.tp.&lt;ชื่อโลก&gt; | /co-many tp &lt;ชื่อโลก&gt;                                                                  | สิทธิ์วาร์ปไปโลกนั้นโลกเดียว เช่น `co.many.worlds.tp.many_world/lobby/world` |
 | co.many.worlds.admindel | /co-many delete <worldName>                                                                     | สิทธิ์ในการลบโลก                                          |
 | co.many.worlds.adminclear | /co-many clear, /co-many-clear                                                                                | สิทธิ์ในการลบโลกถาวร                                       |
+
+หากต้องการให้ผู้เล่นทั่วไปวาร์ปไปที่ lobby ได้ ให้เพิ่มสิทธิ์ `co.many.worlds.tp.many_world/lobby/world` (ผ่าน LuckPerms หรือปลั๊กอินสิทธิ์อื่น) ผู้เล่นที่ไม่มีสิทธิ์จะไม่เห็นโลกนั้นใน tab-complete และคำสั่งอื่น ๆ ของ `/co-many` ยังใช้ได้เฉพาะ admin
 
 ## การตั้งค่า
 
@@ -91,6 +107,9 @@ default-nether-world: 'world_nether'
 default-end-world: 'world_the_end'
 worlds: []   # List of worlds to be loaded on startup (managed by the plugin)
 prevent-single-world-portals: true  # Prevent portal usage in worlds that don't have all 3 dimensions
+# world-settings:   # ปลั๊กอินเพิ่มให้เองเมื่อสร้างโลกด้วย -flat / -void / -large / -amplified / -g
+#   many_world/lobby/world:
+#     type: void
 ```
 
 ไฟล์ `delete_worlds.yml` มีไว้เก็บรายชื่อโลกที่ถูกนำออกจาก `config.yml` และรอการลบถาวร:

@@ -73,7 +73,12 @@ public class CoManyWorld extends JavaPlugin {
 
             World.Environment environment = WorldNames.environmentOf(worldName);
             getLogger().info(">co_many Loading world: " + worldName + " with environment: " + environment);
-            if (new WorldCreator(worldName).environment(environment).createWorld() == null) {
+            WorldCreator creator = new WorldCreator(worldName).environment(environment);
+            if (environment == World.Environment.NORMAL) {
+                // flat / void / large / amplified / custom generator chosen when the world was created
+                WorldOptions.load(getConfig(), worldName).applyTo(creator);
+            }
+            if (creator.createWorld() == null) {
                 getLogger().warning("Failed to load world: " + worldName);
             }
         }

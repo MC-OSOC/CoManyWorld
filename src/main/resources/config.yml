@@ -8,3 +8,6 @@ default-nether-world: 'world_nether'
 default-end-world: 'world_the_end'
 worlds: []   # List of worlds to be loaded on startup (managed by the plugin)
 prevent-single-world-portals: true  # Prevent portal usage in worlds that don't have all 3 dimensions
+# world-settings:   # added by the plugin when a world is created with -flat / -void / -large / -amplified / -g
+#   many_world/lobby/world:
+#     type: void
