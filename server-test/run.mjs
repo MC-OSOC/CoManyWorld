@@ -226,7 +226,8 @@ class Player {
 // ------------------------------------------------------------------ helpers that ask the server
 
 let marker = 0;
-const dimension = (world) => `minecraft:${world}`;
+// The server's own overworld is the dimension "minecraft:overworld"; the other worlds use their name
+const dimension = (world) => `minecraft:${world === 'world' ? 'overworld' : world}`;
 
 /** True if the block at x y z of a world is `block` (the chunk is force-loaded first). */
 async function blockIs(server, world, x, y, z, block, timeoutMs = 60000) {
