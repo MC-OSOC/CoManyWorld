@@ -23,6 +23,20 @@ public final class Platform {
         return TELEPORT_ASYNC != null;
     }
 
+    /** 1 for 1.21.x, 26 for 26.x, or 0 if the version can't be read. */
+    public static int minecraftMajorVersion() {
+        String version = Bukkit.getBukkitVersion(); // e.g. "1.21.11-R0.1-SNAPSHOT" or "26.3-R0.1-SNAPSHOT"
+        int end = 0;
+        while (end < version.length() && Character.isDigit(version.charAt(end))) {
+            end++;
+        }
+        try {
+            return Integer.parseInt(version.substring(0, end));
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
     /** Server software name and version, e.g. "Paper 1.21.11-...". */
     public static String describe() {
         return Bukkit.getName() + " " + Bukkit.getVersion();

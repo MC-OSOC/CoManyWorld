@@ -1,7 +1,6 @@
 package org.cakedek.comanyworld;
 
 import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
@@ -11,13 +10,7 @@ import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.event.player.PlayerPortalEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.event.player.PlayerTeleportEvent.TeleportCause;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-import org.mockbukkit.mockbukkit.MockBukkit;
-import org.mockbukkit.mockbukkit.command.ConsoleCommandSenderMock;
-import org.mockbukkit.mockbukkit.command.MessageTarget;
 import org.mockbukkit.mockbukkit.entity.PlayerMock;
 
 import java.io.File;
@@ -32,104 +25,17 @@ import java.util.zip.ZipOutputStream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-class CoManyWorldTest {
+class CoManyWorldTest extends TestBase {
 
-    @TempDir
-    Path tmp;
-
-    private TestServer server;
-    private CoManyWorld plugin;
-    private ConsoleCommandSenderMock console;
-
-    @BeforeEach
-    void setUp() {
-        server = MockBukkit.mock(new TestServer(tmp.resolve("server").toFile()));
-        // The server's own worlds, loaded before plugins like on a real server
-        server.createWorld(new WorldCreator("world"));
-        server.createWorld(new WorldCreator("world_nether").environment(World.Environment.NETHER));
-        server.createWorld(new WorldCreator("world_the_end").environment(World.Environment.THE_END));
-        plugin = MockBukkit.load(CoManyWorld.class);
-        console = (ConsoleCommandSenderMock) server.getConsoleSender();
-        drain(console);
-    }
-
-    @AfterEach
-    void tearDown() {
-        MockBukkit.unmock();
-    }
-
-    // ---------------------------------------------------------------- helpers
-
-    private static List<String> drain(MessageTarget target) {
-        List<String> messages = new ArrayList<>();
-        String message;
-        while ((message = target.nextMessage()) != null) {
-            messages.add(ChatColor.stripColor(message));
-        }
-        return messages;
-    }
-
-    private static String joined(List<String> messages) {
-        return String.join("\n", messages);
-    }
-
-    /** Runs a console command and returns everything it printed. */
-    private String run(String commandLine) {
-        server.dispatchCommand(console, commandLine);
-        return joined(drain(console));
-    }
-
-    /**
-     * Ticks the server until the console has printed {@code expected} (or 10 s pass).
-     * Background work (backup, import, clear) runs on MockBukkit's thread pool and reports back
-     * on the main thread, so we wait for the result instead of guessing when the pool is idle.
-     */
-    private String awaitOutput(String expected) {
-        StringBuilder all = new StringBuilder();
-        long deadline = System.currentTimeMillis() + 10_000;
-        while (true) {
-            server.getScheduler().performTicks(1);
-            for (String message : drain(console)) {
-                all.append(message).append('\n');
-            }
-            if (all.toString().contains(expected)) {
-                return all.toString();
-            }
-            if (System.currentTimeMillis() > deadline) {
-                fail("Timed out waiting for \"" + expected + "\". Output was:\n" + all);
-            }
-            try {
-                Thread.sleep(5);
-            } catch (InterruptedException e) {
-                fail(e);
-            }
-        }
+    @Override
+    protected boolean dimensionFolders() {
+        return false; // Spigot / Paper 1.21: <server>/many_world/...
     }
 
     private File folder(String worldName) {
-        return new File(server.getWorldContainer(), worldName);
+        return serverFile(worldName);
     }
 
-    private List<String> configWorlds() {
-        return plugin.getConfig().getStringList("worlds");
-    }
-
-    private List<String> trash() {
-        return YamlConfiguration.loadConfiguration(new File(plugin.getDataFolder(), "delete_worlds.yml"))
-                .getStringList("delete_worlds");
-    }
-
-    private void createAll(String name) {
-        run("co-many create " + name + " -all");
-        server.getScheduler().performTicks(5);
-    }
-
-    private PlayerMock op() {
-        PlayerMock player = server.addPlayer();
-        player.setOp(true);
-        drain(player);
-        return player;
-    }
 
     // ---------------------------------------------------------------- plugin.yml / startup
 
@@ -219,6 +125,26 @@ class CoManyWorldTest {
         server.getScheduler().performTicks(5);
         assertEquals(List.of("many_world/dup/world"), configWorlds());
         assertTrue(run("co-many create DUP -11").contains("already exists"));
+    }
+
+    @Test
+    void createWithoutTypeUsesDefaultWorldType() {
+        run("co-many create plain");
+        server.getScheduler().performTicks(3);
+        assertEquals(World.Environment.NORMAL, Bukkit.getWorld("many_world/plain/world").getEnvironment());
+
+        plugin.getConfig().set("default-world-type", "-all");
+        run("co-many create group");
+        server.getScheduler().performTicks(5);
+        assertNotNull(Bukkit.getWorld("many_world/group/world_the_end"));
+        assertTrue(run("co-many create").contains("Command: /co-many create"), "no name: show the help");
+    }
+
+    @Test
+    void layoutIsDetectedAsOldPlace() {
+        assertFalse(WorldFolders.usesDimensionFolders());
+        assertEquals(folder("many_world/a/world"), WorldFolders.newWorldFolder("many_world/a/world"));
+        assertTrue(run("co-many about").contains("World folders >>> many_world/"));
     }
 
     // ---------------------------------------------------------------- tp
@@ -510,6 +436,110 @@ class CoManyWorldTest {
         try (var files = Files.walk(tmp)) {
             assertTrue(files.noneMatch(p -> p.getFileName().toString().equals("escaped.txt")), "zip slip entry was written");
         }
+    }
+
+    @Test
+    void clearSkipsAGroupWhoseWorldsAreLoaded() throws Exception {
+        createAll("test");
+        YamlConfiguration yml = new YamlConfiguration();
+        yml.set("delete_worlds", List.of("many_world/test")); // hand-edited: the whole group
+        yml.save(new File(plugin.getDataFolder(), "delete_worlds.yml"));
+        String out = run("co-many clear confirm");
+        assertTrue(out.contains("Skipped many_world/test: the loaded world"), out);
+        server.getScheduler().performTicks(5);
+        assertTrue(folder("many_world/test/world/level.dat").exists());
+    }
+
+    @Test
+    void twoBackupsInTheSameSecondAreBothKept() {
+        createAll("test");
+        run("co-many backup many_world/test/world");
+        awaitOutput("backed up successfully");
+        run("co-many backup many_world/test/world");
+        awaitOutput("backed up successfully");
+        File[] zips = new File(plugin.getDataFolder(), "many_world_backup").listFiles((d, n) -> n.endsWith(".zip"));
+        assertNotNull(zips);
+        assertEquals(2, zips.length, Arrays.toString(zips));
+    }
+
+    @Test
+    void paperWorldCannotBeImportedOnAnOldLayoutServer() throws Exception {
+        File zip = new File(plugin.getDataFolder(), "import/fromnew.zip");
+        try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(zip.toPath()))) {
+            zos.putNextEntry(new ZipEntry("world/data/paper/level_overrides.dat"));
+            zos.write("x".getBytes());
+            zos.closeEntry();
+        }
+        run("co-many import fromnew.zip");
+        awaitOutput("can only be imported on such a server");
+        assertNull(Bukkit.getWorld("many_world/fromnew/world"));
+        assertFalse(folder("many_world/fromnew").exists());
+    }
+
+    @Test
+    void importDoesNotFollowSymbolicLinks() throws Exception {
+        Path secret = tmp.resolve("secret.txt");
+        Files.writeString(secret, "do not copy me");
+        Path source = plugin.getDataFolder().toPath().resolve("import/LinkMap");
+        Files.createDirectories(source);
+        Files.writeString(source.resolve("level.dat"), "map");
+        try {
+            Files.createSymbolicLink(source.resolve("secret.txt"), secret);
+            Files.createSymbolicLink(plugin.getDataFolder().toPath().resolve("import/linked"), source);
+        } catch (UnsupportedOperationException | IOException e) {
+            org.junit.jupiter.api.Assumptions.abort("symbolic links are not supported here: " + e);
+        }
+
+        assertTrue(run("co-many import linked").contains("Symbolic links are not supported"));
+        run("co-many import LinkMap");
+        awaitOutput("successfully imported");
+        assertTrue(folder("many_world/linkmap/world/level.dat").exists());
+        assertFalse(Files.exists(folder("many_world/linkmap/world/secret.txt").toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS));
+    }
+
+    @Test
+    void zipThatUnpacksTooBigIsStopped() throws Exception {
+        plugin.getConfig().set("import-max-size-mb", 1);
+        // 3 MB of zeros: a tiny zip that unpacks to more than the limit (like a zip bomb)
+        File zip = new File(plugin.getDataFolder(), "import/huge.zip");
+        try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(zip.toPath()))) {
+            zos.putNextEntry(new ZipEntry("huge/level.dat"));
+            zos.write("x".getBytes());
+            zos.closeEntry();
+            zos.putNextEntry(new ZipEntry("huge/region/r.0.0.mca"));
+            zos.write(new byte[3 * 1024 * 1024]);
+            zos.closeEntry();
+        }
+        assertTrue(zip.length() < 100 * 1024, "the zip itself is small: " + zip.length());
+
+        run("co-many import huge.zip");
+        String out = awaitOutput("Failed to import world");
+        assertTrue(out.contains("import-max-size-mb"), out);
+        assertNull(Bukkit.getWorld("many_world/huge/world"));
+        assertFalse(folder("many_world/huge").exists());
+        File[] cache = new File(plugin.getDataFolder(), "import/cache").listFiles();
+        assertTrue(cache == null || cache.length == 0, "unpacked files must be removed: " + Arrays.toString(cache));
+
+        // Under the limit it works
+        plugin.getConfig().set("import-max-size-mb", 10);
+        run("co-many import huge.zip");
+        awaitOutput("successfully imported");
+        assertNotNull(Bukkit.getWorld("many_world/huge/world"));
+    }
+
+    @Test
+    void folderTooBigIsNotCopied() throws Exception {
+        plugin.getConfig().set("import-max-size-mb", 1);
+        Path source = plugin.getDataFolder().toPath().resolve("import/BigMap");
+        Files.createDirectories(source.resolve("region"));
+        Files.writeString(source.resolve("level.dat"), "big");
+        Files.write(source.resolve("region/r.0.0.mca"), new byte[2 * 1024 * 1024]);
+
+        run("co-many import BigMap");
+        String out = awaitOutput("too big to import");
+        assertTrue(out.contains("2 MB"), out);
+        assertFalse(folder("many_world/bigmap").exists());
+        assertNull(Bukkit.getWorld("many_world/bigmap/world"));
     }
 
     @Test

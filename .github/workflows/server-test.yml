@@ -1,0 +1,162 @@
+# Starts real Paper and Spigot servers on GitHub's runner with the plugin installed,
+# types the plugin's commands into the server console and checks the answers
+# (create, list, backup, import, restart, delete, clear). See .github/scripts/server-smoke-test.sh
+#
+# Jobs:
+#   paper / spigot <version>                    the tested version (26.3, or the one typed in)
+#   paper / spigot 1.21.11                      the oldest supported version
+#   paper <version> (upgrade from 1.21.11)      worlds made on Paper 1.21.11 must survive the upgrade
+#   paper <version> (backup from spigot ...)    a backup made on Spigot is imported on Paper
+#
+# Runs on every push that changes the plugin, or by hand:
+#   Actions -> Server test -> Run workflow -> Minecraft version (e.g. 26.3)
+name: Server test
+
+on:
+  push:
+    paths:
+      - 'src/**'
+      - 'pom.xml'
+      - '.github/workflows/server-test.yml'
+      - '.github/scripts/**'
+  workflow_dispatch:
+    inputs:
+      minecraft_version:
+        description: 'Minecraft version to test, e.g. 26.3'
+        required: true
+        default: '26.3'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: server-test-${{ github.ref }}-${{ inputs.minecraft_version || 'default' }}
+  cancel-in-progress: true
+
+jobs:
+  # The MockBukkit tests (same as ci.yml), so they also run on branches without a pull request.
+  unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Test (Paper API + MockBukkit)
+        run: mvn -B -Ppaper clean verify
+
+  server-test:
+    name: >-
+      ${{ matrix.server }} ${{ matrix.version || inputs.minecraft_version || '26.3' }}${{
+      matrix.upgrade_from && format(' (upgrade from {0})', matrix.upgrade_from) || '' }}${{
+      matrix.backup_from_spigot && format(' (backup from spigot {0})', matrix.backup_from_spigot) || '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - server: paper
+          - server: spigot
+          - server: paper
+            version: '1.21.11'
+          - server: spigot
+            version: '1.21.11'
+          - server: paper
+            upgrade_from: '1.21.11'
+          - server: paper
+            backup_from_spigot: '26.3'
+    env:
+      SERVER: ${{ matrix.server }}
+      MC_VERSION: ${{ matrix.version || inputs.minecraft_version || '26.3' }}
+      UPGRADE_FROM: ${{ matrix.upgrade_from }}
+      BACKUP_FROM_SPIGOT: ${{ matrix.backup_from_spigot }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Minecraft 26.x needs Java 25; 1.21.x servers run on Java 21, like on a real server.
+      # The plugin itself is compiled for Java 21.
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: |
+            21
+            25
+          cache: maven
+
+      - name: Pick Java for each server
+        run: |
+          java_for() {
+            case "$1" in
+              1.*) echo "$JAVA_HOME_21_X64/bin/java" ;;
+              *)   echo "$JAVA_HOME_25_X64/bin/java" ;;
+            esac
+          }
+          {
+            echo "JAVA=$(java_for "$MC_VERSION")"
+            if [ -n "$UPGRADE_FROM" ]; then echo "OLD_JAVA=$(java_for "$UPGRADE_FROM")"; fi
+            if [ -n "$BACKUP_FROM_SPIGOT" ]; then echo "OTHER_JAVA=$(java_for "$BACKUP_FROM_SPIGOT")"; fi
+          } >> "$GITHUB_ENV"
+
+      - name: Build plugin jar
+        run: mvn -B clean package
+
+      - name: Get the servers
+        run: |
+          if [ "$SERVER" = paper ]; then
+            BUILD=$(bash .github/scripts/download-paper.sh "$MC_VERSION" server/server.jar)
+          else
+            BUILD=$(bash .github/scripts/build-spigot.sh "$MC_VERSION" server/server.jar "$JAVA")
+          fi
+          echo "$BUILD"
+          if [ -n "$UPGRADE_FROM" ]; then
+            OLD=$(bash .github/scripts/download-paper.sh "$UPGRADE_FROM" server/old-server.jar)
+            echo "$OLD"
+            BUILD="$OLD -> $BUILD"
+          fi
+          if [ -n "$BACKUP_FROM_SPIGOT" ]; then
+            OTHER=$(bash .github/scripts/build-spigot.sh "$BACKUP_FROM_SPIGOT" server/other-server.jar "$OTHER_JAVA")
+            echo "$OTHER"
+            BUILD="$BUILD, backup from $OTHER"
+            echo "OTHER_SERVER_JAR=server/other-server.jar" >> "$GITHUB_ENV"
+          fi
+          echo "SERVER_BUILD=$BUILD" >> "$GITHUB_ENV"
+
+      - name: Run the plugin on the server
+        run: |
+          PLUGIN_JAR=$(ls target/CoManyWorld-*.jar)
+          ARGS=(server/server.jar "$PLUGIN_JAR" run)
+          if [ -n "$UPGRADE_FROM" ]; then
+            ARGS+=(server/old-server.jar)
+          fi
+          bash .github/scripts/server-smoke-test.sh "${ARGS[@]}"
+
+      - name: Summary
+        if: always()
+        run: |
+          if [ -f run/console.log ]; then
+            RUNNING_ON=$(grep -a -o 'Running on .*' run/console.log | tail -n 1 || true)
+          fi
+          {
+            echo "### $SERVER $MC_VERSION${UPGRADE_FROM:+ (upgrade from $UPGRADE_FROM)}${BACKUP_FROM_SPIGOT:+ (backup from spigot $BACKUP_FROM_SPIGOT)}: ${{ job.status }}"
+            echo "- Server: ${SERVER_BUILD:-not downloaded}"
+            echo "- Plugin says: ${RUNNING_ON:-(plugin did not start)}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: server-logs-${{ matrix.server }}-${{ env.MC_VERSION }}${{ matrix.upgrade_from && '-upgrade' || '' }}${{ matrix.backup_from_spigot && '-from-spigot' || '' }}
+          path: |
+            run/console.log
+            run-other/console.log
+            run/logs/
+            run/plugins/CoManyWorld/*.yml
+            buildtools/
+          if-no-files-found: ignore
+          retention-days: 14

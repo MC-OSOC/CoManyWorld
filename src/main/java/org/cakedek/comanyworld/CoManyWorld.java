@@ -5,6 +5,7 @@ import org.bukkit.World;
 import org.bukkit.WorldCreator;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.cakedek.comanyworld.cm.WorldClear;
 
 import java.io.File;
 import java.util.List;
@@ -52,6 +53,11 @@ public class CoManyWorld extends JavaPlugin {
         loadWorldsOnStartup();
     }
 
+    @Override
+    public void onDisable() {
+        WorldClear.reset();
+    }
+
     public static CoManyWorld getInstance() {
         return instance;
     }
@@ -63,8 +69,9 @@ public class CoManyWorld extends JavaPlugin {
             if (Bukkit.getWorld(worldName) != null) {
                 continue; // already loaded (e.g. by another plugin or a /reload)
             }
-            File folder = WorldNames.managedFolder(worldName);
-            if (folder == null || !folder.isDirectory()) {
+            // The folder can be in the old place (<server>/many_world/...) or, on Paper 26.x,
+            // in world/dimensions/minecraft/many_world/... Paper moves it there itself when it loads it.
+            if (WorldFolders.managedFolders(worldName).stream().noneMatch(File::isDirectory)) {
                 // Don't silently generate a brand new world when the folder was removed or moved.
                 getLogger().warning("Skipping world '" + worldName + "' from config.yml: its folder does not exist"
                         + " or is not inside " + WorldNames.ROOT);

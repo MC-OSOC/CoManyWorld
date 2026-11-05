@@ -2,10 +2,12 @@ package org.cakedek.comanyworld.cm;
 
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
+import org.bukkit.World;
 import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.cakedek.comanyworld.CoManyWorld;
+import org.cakedek.comanyworld.WorldFolders;
 import org.cakedek.comanyworld.WorldNames;
 
 import java.io.File;
@@ -51,48 +53,81 @@ public class WorldClear {
         }
 
         // Decide on the main thread what is safe to delete.
-        Map<String, File> folders = new LinkedHashMap<>();
+        // A world can have files in two places (see WorldFolders), both are deleted.
+        Map<String, List<File>> folders = new LinkedHashMap<>();
         List<String> keep = new ArrayList<>();
         for (String worldName : deleteWorlds) {
-            File folder = WorldNames.managedFolder(worldName);
-            if (folder == null) {
+            if (!WorldFolders.isSafeManagedName(worldName)) {
                 sender.sendMessage(ChatColor.RED + "Skipped " + worldName + ": not inside " + WorldNames.ROOT);
                 keep.add(worldName);
-            } else if (Bukkit.getWorld(worldName) != null) {
+                continue;
+            }
+            if (Bukkit.getWorld(worldName) != null) {
                 sender.sendMessage(ChatColor.RED + "Skipped " + worldName + ": the world is loaded again.");
                 keep.add(worldName);
-            } else {
-                folders.put(worldName, folder);
+                continue;
             }
+            List<File> worldFolders = WorldFolders.managedFolders(worldName);
+            World loadedInside = loadedWorldInside(worldFolders);
+            if (loadedInside != null) {
+                // e.g. a hand-edited trash entry "many_world/foo" while many_world/foo/world is loaded
+                sender.sendMessage(ChatColor.RED + "Skipped " + worldName + ": the loaded world "
+                        + loadedInside.getName() + " is inside it.");
+                keep.add(worldName);
+                continue;
+            }
+            folders.put(worldName, worldFolders);
         }
 
+        if (folders.isEmpty()) {
+            // Nothing to delete (all skipped): no need for a background task.
+            finish(sender, new LinkedHashMap<>(), keep, deleteWorldsConfig, deleteWorldsFile);
+            return;
+        }
+
+        // Asked here: the server's world list must only be read on the main thread.
+        List<File> roots = WorldFolders.managedRoots();
         running = true;
         Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
             Map<String, Boolean> results = new LinkedHashMap<>();
-            for (Map.Entry<String, File> entry : folders.entrySet()) {
-                results.put(entry.getKey(), deleteRecursively(entry.getValue().toPath()));
-                deleteParentIfEmpty(entry.getValue());
+            for (Map.Entry<String, List<File>> entry : folders.entrySet()) {
+                boolean deleted = true;
+                for (File folder : entry.getValue()) {
+                    deleted &= deleteRecursively(folder.toPath());
+                    deleteParentIfEmpty(folder, roots);
+                }
+                results.put(entry.getKey(), deleted);
             }
             Bukkit.getScheduler().runTask(plugin, () -> {
                 running = false;
-                for (Map.Entry<String, Boolean> result : results.entrySet()) {
-                    if (result.getValue()) {
-                        sender.sendMessage("Deleted world folder: " + result.getKey());
-                    } else {
-                        sender.sendMessage("Failed to delete world folder: " + result.getKey());
-                        keep.add(result.getKey());
-                    }
-                }
-                // Keep anything that could not be deleted in delete_worlds.yml
-                deleteWorldsConfig.set("delete_worlds", keep);
-                try {
-                    deleteWorldsConfig.save(deleteWorldsFile);
-                } catch (IOException e) {
-                    sender.sendMessage("Failed to update delete_worlds.yml");
-                    plugin.getLogger().log(Level.SEVERE, "Failed to update delete_worlds.yml", e);
-                }
+                finish(sender, results, keep, deleteWorldsConfig, deleteWorldsFile);
             });
         });
+    }
+
+    /** Called when the plugin is disabled, so a clear that was cut off doesn't block the next one. */
+    public static void reset() {
+        running = false;
+    }
+
+    private static void finish(CommandSender sender, Map<String, Boolean> results, List<String> keep,
+                               FileConfiguration deleteWorldsConfig, File deleteWorldsFile) {
+        for (Map.Entry<String, Boolean> result : results.entrySet()) {
+            if (result.getValue()) {
+                sender.sendMessage("Deleted world folder: " + result.getKey());
+            } else {
+                sender.sendMessage("Failed to delete world folder: " + result.getKey());
+                keep.add(result.getKey());
+            }
+        }
+        // Keep anything that could not be deleted in delete_worlds.yml
+        deleteWorldsConfig.set("delete_worlds", keep);
+        try {
+            deleteWorldsConfig.save(deleteWorldsFile);
+        } catch (IOException e) {
+            sender.sendMessage("Failed to update delete_worlds.yml");
+            CoManyWorld.getInstance().getLogger().log(Level.SEVERE, "Failed to update delete_worlds.yml", e);
+        }
     }
 
     private static boolean deleteRecursively(Path root) {
@@ -114,12 +149,29 @@ public class WorldClear {
         }
     }
 
-    /** Removes many_world/<name>/ once all of its worlds are gone. */
-    private static void deleteParentIfEmpty(File worldFolder) {
+    private static World loadedWorldInside(List<File> folders) {
+        for (File folder : folders) {
+            Path target = folder.toPath();
+            for (World world : Bukkit.getWorlds()) {
+                Path worldFolder;
+                try {
+                    worldFolder = world.getWorldFolder().getCanonicalFile().toPath();
+                } catch (IOException e) {
+                    worldFolder = world.getWorldFolder().toPath().toAbsolutePath().normalize();
+                }
+                if (worldFolder.startsWith(target)) {
+                    return world;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** Removes many_world/<name>/ once all of its worlds are gone (never many_world/ itself). */
+    private static void deleteParentIfEmpty(File worldFolder, List<File> roots) {
         File parent = worldFolder.getParentFile();
-        File root = new File(Bukkit.getWorldContainer(), WorldNames.ROOT);
         try {
-            if (parent != null && !parent.getCanonicalFile().equals(root.getCanonicalFile())) {
+            if (parent != null && WorldFolders.rootOf(parent, roots) != null) {
                 String[] remaining = parent.list();
                 if (remaining != null && remaining.length == 0) {
                     Files.deleteIfExists(parent.toPath());

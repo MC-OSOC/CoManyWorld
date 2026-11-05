@@ -35,7 +35,7 @@ Releases are built by GitHub Actions: see [docs/RELEASING.md](docs/RELEASING.md)
 
 #### Create a new world
 `/co-many create <worldName> [-11|-12|-13|-all]`
-- `-11` : Normal world (default)
+- `-11` : Normal world (default; with no type, `default-world-type` from `config.yml` is used)
 - `-12` : Nether world
 - `-13` : The End world
 - `-all`: Create all world types
@@ -67,6 +67,10 @@ Releases are built by GitHub Actions: see [docs/RELEASING.md](docs/RELEASING.md)
      ├─world_nether/
      └─world_the_end/
   ```
+- **Paper 26.x** keeps every world inside the main world's folder instead: `world/dimensions/minecraft/many_world/custom_world/world`
+  (the world's name in game is still `many_world/custom_world/world`; `/co-many about` shows where they are stored)
+- Upgrading from Paper 1.21 to 26.x: Paper moves the old worlds from `many_world/` into `world/dimensions/...` by itself on the first start, and the plugin finds them in both places.
+  **Always back up the whole server folder before upgrading.**
 
 ## Permissions
 
@@ -100,7 +104,11 @@ delete_worlds: []
 
 ## Importing Worlds
 
-Put a world folder or ZIP file in `plugins/CoManyWorld/import` and run `/co-many import <file name>`. The plugin searches for `level.dat` to find the root of the world (`session.lock` and `uid.dat` are not copied). Copying runs in the background, so the server doesn't freeze.
+Put a world folder or ZIP file in `plugins/CoManyWorld/import` and run `/co-many import <file name>`. Copying runs in the background, so the server doesn't freeze.
+- The plugin looks for a folder with `level.dat` (single player saves, Spigot, Paper 1.21) or a Paper 26.x world folder (with `data/paper/level_overrides.dat`).
+- Paper 26.x worlds (e.g. backups made on Paper 26.x) can only be imported on Paper 26.x.
+- `session.lock`, `uid.dat` and `data/paper/metadata.dat` are not copied (otherwise the server sees a duplicate world).
+- Symbolic links are not copied, and a ZIP that unpacks to more than the free disk space is stopped.
 
 ## World Backup
 
